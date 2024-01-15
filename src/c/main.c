@@ -1,31 +1,24 @@
-#include "util/error.h"
-#include "util/memory/image.h"
+#include "c.h"
 
-#include <stdint.h>
+#include "util/error.h"
+#include "util/shader.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <vulkan/vulkan.h>
 
 #define WIDTH 1920
 #define HEIGHT 1080
 
-typedef struct Vulkanappt {
-    // core
-    VkInstance instance;
-    VkPhysicalDevice physDevice;
-    VkPhysicalDeviceMemoryProperties physDevMemProps;
-    VkDevice device;
-    VkQueue queue;
-    VkCommandPool cmdPool;
-    // rendering
-    Image renderTargetImage;
-    VkImageView renderTargetImageView;
-    VkRenderPass renderPass;
-    VkFramebuffer framebuffer;
-    VkDescriptorPool descPool;
-    // pipeline
-} *VulkanApp;
+typedef struct Camera_t {
+    float proj[16];
+} Camera;
+
+typedef struct PushConstant_t {
+    float scl[4];
+    float trs[4];
+    float uv[4];
+} PushConstant;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -38,6 +31,8 @@ void delete_vulkan_app(VulkanApp app) {
     if (app->device != NULL) vkDeviceWaitIdle(app->device);
 
     // pipeline
+    releasePipeline(app);
+    if (app->vertShader != NULL) vkDestroyShaderModule(app->device, app->vertShader, NULL);
 
     // rendering
     if (app->descPool != NULL) vkDestroyDescriptorPool(app->device, app->descPool, NULL);
@@ -58,12 +53,12 @@ void delete_vulkan_app(VulkanApp app) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 VulkanApp create_vulkan_app(void) {
-#define CHECK_VK(p, m) ERROR_IF((p) != VK_SUCCESS, "createVulkanApp()", (m), delete_vulkan_app(app), NULL)
-#define CHECK(p, m)    ERROR_IF(!(p),              "createVulkanApp()", (m), delete_vulkan_app(app), NULL)
+#define CHECK_VK(p, m) ERROR_IF((p) != VK_SUCCESS, "create_vulkan_app()", (m), delete_vulkan_app(app), NULL)
+#define CHECK(p, m)    ERROR_IF(!(p),              "create_vulkan_app()", (m), delete_vulkan_app(app), NULL)
 
     // create app
-    const VulkanApp app = (const VulkanApp)malloc(sizeof(struct Vulkanappt));
-    memset(app, 0, sizeof(struct Vulkanappt));
+    const VulkanApp app = (const VulkanApp)malloc(sizeof(struct VulkanApp_t));
+    memset(app, 0, sizeof(struct VulkanApp_t));
 
     // ===================================================================================================================================================== //
     //     core                                                                                                                                              //
@@ -305,10 +300,6 @@ VulkanApp create_vulkan_app(void) {
 #undef RENDER_TARGET_PIXEL_FORMAT
 #undef ATTACHMENTS_COUNT
 
-    // ===================================================================================================================================================== //
-    //     pipeline                                                                                                                                          //
-    // ===================================================================================================================================================== //
-
     return app;
 
 #undef CHECK
@@ -319,74 +310,230 @@ VulkanApp create_vulkan_app(void) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-VkCommandBuffer allocateAndStartCommandBuffer(VulkanApp app) {
-#define CHECK_VK(p, m) ERROR_IF((p) != VK_SUCCESS, "createAndStartCommandBuffer()", (m), {}, NULL)
+int create_pipeline(VulkanApp app, const char *fragShaderPath) {
+#define CHECK_VK(p, m) ERROR_IF((p) != VK_SUCCESS, "create_pipeline()", (m), releasePipeline(app), 0)
+#define CHECK(p, m)    ERROR_IF(!(p),              "create_pipeline()", (m), releasePipeline(app), 0)
 
-    VkCommandBuffer cmdBuffer;
+    releasePipeline(app);
+
+    // descriptor set layout
     {
-        const VkCommandBufferAllocateInfo ai = {
-            VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-            NULL,
-            app->cmdPool,
-            VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-            1,
-        };
-        CHECK_VK(vkAllocateCommandBuffers(app->device, &ai, &cmdBuffer), "failed to allocate a command buffer.");
-    }
-
-    {
-        const VkCommandBufferBeginInfo bi = {
-            VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            NULL,
-            VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-            NULL,
-        };
-        CHECK_VK(vkBeginCommandBuffer(cmdBuffer, &bi), "failed to begin a command buffer.");
-    }
-
-    return cmdBuffer;
-
-#undef CHECK_VK
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-int endAndSubmitCommandBuffer(
-    VulkanApp app,
-    VkCommandBuffer cmdBuffer,
-    uint32_t waitSemaphoresCount,
-    const VkSemaphore *waitSemaphores,
-    const VkPipelineStageFlags *waitDstStageMasks,
-    uint32_t signalSemaphoresCount,
-    const VkSemaphore *signalSemaphores
-) {
-#define CHECK_VK(p, m) ERROR_IF((p) != VK_SUCCESS, "submitCommandBuffer()", (m), {}, 0)
-
-    vkEndCommandBuffer(cmdBuffer);
-
-    {
-#define SUBMITS_COUNT 1
-        const VkSubmitInfo sis[SUBMITS_COUNT] = {
+#define BINDINGS_COUNT 1
+        const VkDescriptorSetLayoutBinding bindings[BINDINGS_COUNT] = {
             {
-                VK_STRUCTURE_TYPE_SUBMIT_INFO,
-                NULL,
-                waitSemaphoresCount,
-                waitSemaphores,
-                waitDstStageMasks,
+                0,
+                VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
                 1,
-                &cmdBuffer,
-                signalSemaphoresCount,
-                signalSemaphores,
+                VK_SHADER_STAGE_VERTEX_BIT,
+                NULL,
             },
         };
-        CHECK_VK(vkQueueSubmit(app->queue, SUBMITS_COUNT, sis, NULL), "failed to submit a command buffer.");
-#undef SUBMITS_COUNT
+        const VkDescriptorSetLayoutCreateInfo ci = {
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            NULL,
+            0,
+            BINDINGS_COUNT,
+            bindings,
+        };
+        CHECK_VK(vkCreateDescriptorSetLayout(app->device, &ci, NULL, &app->descSetLayout), "failed to create a descriptor set layout.");
+#undef BINDINGS_COUNT
+    }
+
+    // pipeline layout
+    {
+#define DESC_SET_LAYOUTS_COUNT 1
+#define PUSH_CONSTANTS_COUNT 1
+        const VkDescriptorSetLayout descSetLayouts[DESC_SET_LAYOUTS_COUNT] = { app->descSetLayout };
+        const VkPushConstantRange pushConstants[PUSH_CONSTANTS_COUNT] = {
+            {
+                VK_SHADER_STAGE_VERTEX_BIT,
+                0,
+                sizeof(PushConstant),
+            },
+        };
+        const VkPipelineLayoutCreateInfo ci = {
+            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            NULL,
+            0,
+            DESC_SET_LAYOUTS_COUNT,
+            descSetLayouts,
+            PUSH_CONSTANTS_COUNT,
+            pushConstants,
+        };
+        CHECK_VK(vkCreatePipelineLayout(app->device, &ci, NULL, &app->pipelineLayout), "failed to create a pipeline layout.");
+#undef PUSH_CONSTANTS_COUNT
+#undef DESC_SET_LAYOUTS_COUNT
+    }
+
+    // shader modules
+    {
+        if (app->vertShader == NULL) {
+            app->vertShader = createShaderModuleFromFile(app->device, "./shader.vert.spv");
+            CHECK(app->vertShader != NULL, "failed to create a shader module from ./shader.vert.spv");
+        }
+        app->fragShader = createShaderModuleFromFile(app->device, fragShaderPath);
+        CHECK(app->fragShader != NULL, "failed to create a shader module from ./shader.frag.spv");
+    }
+
+    // pipeline
+    {
+#define SHADERS_COUNT 2
+#define VERT_INP_BIND_DESCS_COUNT 1
+#define VERT_INP_ATTR_DESCS_COUNT 2
+#define VIEWPORTS_COUNT 1
+#define COLOR_BLEND_ATTACHMENTS_COUNT 1
+
+        const VkPipelineShaderStageCreateInfo shaderCIs[SHADERS_COUNT] = {
+            {
+                VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                NULL,
+                0,
+                VK_SHADER_STAGE_VERTEX_BIT,
+                app->vertShader,
+                "main",
+                NULL,
+            },
+            {
+                VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                NULL,
+                0,
+                VK_SHADER_STAGE_FRAGMENT_BIT,
+                app->fragShader,
+                "main",
+                NULL,
+            },
+        };
+
+        const VkVertexInputBindingDescription vertInpBindDescs[VERT_INP_BIND_DESCS_COUNT] = {
+            { 0, sizeof(float) * 5, VK_VERTEX_INPUT_RATE_VERTEX },
+        };
+        const VkVertexInputAttributeDescription vertInpAttrDescs[VERT_INP_ATTR_DESCS_COUNT] = {
+            // position
+            { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 },
+            // uv
+            { 1, 0, VK_FORMAT_R32G32_SFLOAT, sizeof(float) * 3 },
+        };
+        const VkPipelineVertexInputStateCreateInfo vertInpCI = {
+            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+            NULL,
+            0,
+            VERT_INP_BIND_DESCS_COUNT,
+            vertInpBindDescs,
+            VERT_INP_ATTR_DESCS_COUNT,
+            vertInpAttrDescs,
+        };
+
+        const VkPipelineInputAssemblyStateCreateInfo inpAssemCI = {
+            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+            NULL,
+            0,
+            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+            VK_FALSE,
+        };
+
+        const VkViewport viewports[VIEWPORTS_COUNT] = {
+            { 0.0f, 0.0f, (float)WIDTH, (float)HEIGHT, 0.0f, 1.0f },
+        };
+        const VkRect2D scissors[VIEWPORTS_COUNT] = {
+            { {0, 0}, {WIDTH, HEIGHT} },
+        };
+        const VkPipelineViewportStateCreateInfo viewportCI = {
+            VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+            NULL,
+            0,
+            VIEWPORTS_COUNT,
+            viewports,
+            VIEWPORTS_COUNT,
+            scissors,
+        };
+
+        // ラスタライゼーションステート
+        const VkPipelineRasterizationStateCreateInfo rasterCI = {
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+            NULL,
+            0,
+            VK_FALSE,
+            VK_FALSE,
+            VK_POLYGON_MODE_FILL,
+            VK_CULL_MODE_NONE,
+            VK_FRONT_FACE_COUNTER_CLOCKWISE,
+            VK_FALSE,
+            0.0f,
+            0.0f,
+            0.0f,
+            1.0f,
+        };
+
+        // マルチサンプルステート
+        const VkPipelineMultisampleStateCreateInfo multisampleCI = {
+            VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+            NULL,
+            0,
+            VK_SAMPLE_COUNT_1_BIT,
+            VK_FALSE,
+            0.0f,
+            NULL,
+            VK_FALSE,
+            VK_FALSE,
+        };
+
+        // カラーブレンドステート
+        const VkPipelineColorBlendAttachmentState colorBlendAttchs[COLOR_BLEND_ATTACHMENTS_COUNT] = {
+            {
+                VK_TRUE,
+                VK_BLEND_FACTOR_SRC_ALPHA,
+                VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+                VK_BLEND_OP_ADD,
+                VK_BLEND_FACTOR_SRC_ALPHA,
+                VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+                VK_BLEND_OP_ADD,
+                VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+            }
+        };
+        const VkPipelineColorBlendStateCreateInfo colorBlendCI = {
+            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+            NULL,
+            0,
+            VK_FALSE,
+            (VkLogicOp)0,
+            COLOR_BLEND_ATTACHMENTS_COUNT,
+            colorBlendAttchs,
+            {0.0f, 0.0f, 0.0f, 0.0f},
+        };
+
+        const VkGraphicsPipelineCreateInfo ci = {
+            VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+            NULL,
+            0,
+            SHADERS_COUNT,
+            shaderCIs,
+            &vertInpCI,
+            &inpAssemCI,
+            NULL,
+            &viewportCI,
+            &rasterCI,
+            &multisampleCI,
+            NULL,
+            &colorBlendCI,
+            NULL,
+            app->pipelineLayout,
+            app->renderPass,
+            0,
+            NULL,
+            0,
+        };
+        CHECK_VK(vkCreateGraphicsPipelines(app->device, VK_NULL_HANDLE, 1, &ci, NULL, &app->pipeline), "failed to create a pipeline.");
+
+#undef COLOR_BLEND_ATTACHMENTS_COUNT
+#undef VIEWPORTS_COUNT
+#undef VERT_INP_ATTR_DESCS_COUNT
+#undef VERT_INP_BIND_DESCS_COUNT
+#undef SHADERS_COUNT
     }
 
     return 1;
 
+#undef CHECK
 #undef CHECK_VK
 }
 
@@ -397,6 +544,11 @@ int endAndSubmitCommandBuffer(
 int render(VulkanApp app) {
 #define CHECK_VK(p, m) ERROR_IF((p) != VK_SUCCESS, "render()", (m), {}, 0)
 #define CHECK(p, m)    ERROR_IF(!(p),              "render()", (m), {}, 0)
+
+    if (app->pipeline == NULL) {
+        printf("[ warning ] render(): pipeline not created.\n");
+        return 0;
+    }
 
     // allocate and start a command buffer
     VkCommandBuffer cmdBuffer = allocateAndStartCommandBuffer(app);
@@ -419,22 +571,14 @@ int render(VulkanApp app) {
         vkCmdBeginRenderPass(cmdBuffer, &bi, VK_SUBPASS_CONTENTS_INLINE);
     }
 
+    // bind a pipeline
+    vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, app->pipeline);
+
     // end a render pass
     vkCmdEndRenderPass(cmdBuffer);
 
     // end and submit a command buffer
-    CHECK(
-        endAndSubmitCommandBuffer(
-            app,
-            cmdBuffer,
-            0,
-            NULL,
-            0,
-            0,
-            NULL
-        ),
-        "failed to end or submit a command buffer for rendering."
-    );
+    CHECK(endAndSubmitCommandBuffer(app, cmdBuffer), "failed to end or submit a command buffer for rendering.");
 
     // wait for queue
     CHECK_VK(vkQueueWaitIdle(app->queue), "failed to wait queue.");

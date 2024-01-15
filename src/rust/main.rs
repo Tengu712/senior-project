@@ -6,6 +6,7 @@ use std::ffi::*;
 extern "C" {
     fn delete_vulkan_app(_: *mut c_void);
     fn create_vulkan_app() -> *mut c_void;
+    fn create_pipeline(_: *mut c_void, _: *const c_char) -> c_int;
     fn render(_: *mut c_void) -> c_int;
 }
 
@@ -23,6 +24,11 @@ fn main() {
         end.as_micros()
     };
 
+    let base_frag_shader = CString::new("./shader.frag.spv").unwrap();
+    if unsafe { create_pipeline(vapp, base_frag_shader.as_ptr()) == 0 } {
+        println!("[ error ] main(): failed to create base pipeline.");
+        return;
+    }
     let base_time = measure();
 
     let eval = |_| {
