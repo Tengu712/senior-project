@@ -1,6 +1,7 @@
 #include "c.h"
 
 #include "util/error.h"
+#include "util/memory/memory.h"
 #include "util/shader.h"
 
 #include <stdio.h>
@@ -9,16 +10,6 @@
 
 #define WIDTH 1920
 #define HEIGHT 1080
-
-typedef struct Camera_t {
-    float proj[16];
-} Camera;
-
-typedef struct PushConstant_t {
-    float scl[4];
-    float trs[4];
-    float uv[4];
-} PushConstant;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -33,6 +24,10 @@ void delete_vulkan_app(VulkanApp app) {
     // pipeline
     releasePipeline(app);
     if (app->vertShader != NULL) vkDestroyShaderModule(app->device, app->vertShader, NULL);
+
+    // model
+    if (app->idxBuffer != NULL) deleteBuffer(app->device, app->idxBuffer);
+    if (app->vtxBuffer != NULL) deleteBuffer(app->device, app->vtxBuffer);
 
     // rendering
     if (app->descPool != NULL) vkDestroyDescriptorPool(app->device, app->descPool, NULL);
@@ -278,20 +273,14 @@ VulkanApp create_vulkan_app(void) {
 
     // create a descriptor pool
     {
-#define SIZES_COUNT 1
-        const VkDescriptorPoolSize sizes[SIZES_COUNT] = {
-            {
-                VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                1,
-            },
-        };
+#define SIZES_COUNT 0
         const VkDescriptorPoolCreateInfo ci = {
             VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
             NULL,
             VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
             1,
             SIZES_COUNT,
-            sizes,
+            NULL,
         };
         CHECK_VK(vkCreateDescriptorPool(app->device, &ci, NULL, &app->descPool), "failed to create a descriptor pool.");
 #undef SIZES_COUNT
@@ -299,6 +288,52 @@ VulkanApp create_vulkan_app(void) {
 
 #undef RENDER_TARGET_PIXEL_FORMAT
 #undef ATTACHMENTS_COUNT
+
+    // ===================================================================================================================================================== //
+    //     model                                                                                                                                             //
+    // ===================================================================================================================================================== //
+
+    {
+#define VERTICES_COUNT 20
+#define INDICES_COUNT 6
+        const float vertices[VERTICES_COUNT] = {
+            -1.0, -1.0, 0.0,
+             1.0, -1.0, 0.0,
+             1.0,  1.0, 0.0,
+            -1.0,  1.0, 0.0,
+        };
+        const uint32_t indices[INDICES_COUNT] = {
+            0, 1, 2,
+            0, 2, 3,
+        };
+        app->indicesCount = INDICES_COUNT;
+        app->vtxBuffer = createBuffer(
+            app->device,
+            &app->physDevMemProps,
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+            sizeof(float) * VERTICES_COUNT
+        );
+        CHECK(app->vtxBuffer != NULL, "failed to create a vertex buffer for a model.");
+        app->idxBuffer = createBuffer(
+            app->device,
+            &app->physDevMemProps,
+            VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+            sizeof(uint32_t) * INDICES_COUNT
+        );
+        CHECK(app->idxBuffer != NULL, "failed to create a index buffer for a model.");
+        CHECK(
+            uploadToDeviceMemory(app->device, app->vtxBuffer->devMemory, vertices, sizeof(float) * VERTICES_COUNT),
+            "failed to upload vertices data to a vertex buffer."
+        );
+        CHECK(
+            uploadToDeviceMemory(app->device, app->idxBuffer->devMemory, indices, sizeof(uint32_t) * INDICES_COUNT),
+            "failed to upload indices data to a index buffer."
+        );
+#undef INDICES_COUNT
+#undef VERTICES_COUNT
+    }
 
     return app;
 
@@ -318,22 +353,13 @@ int create_pipeline(VulkanApp app, const char *fragShaderPath) {
 
     // descriptor set layout
     {
-#define BINDINGS_COUNT 1
-        const VkDescriptorSetLayoutBinding bindings[BINDINGS_COUNT] = {
-            {
-                0,
-                VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                1,
-                VK_SHADER_STAGE_VERTEX_BIT,
-                NULL,
-            },
-        };
+#define BINDINGS_COUNT 0
         const VkDescriptorSetLayoutCreateInfo ci = {
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
             NULL,
             0,
             BINDINGS_COUNT,
-            bindings,
+            NULL,
         };
         CHECK_VK(vkCreateDescriptorSetLayout(app->device, &ci, NULL, &app->descSetLayout), "failed to create a descriptor set layout.");
 #undef BINDINGS_COUNT
@@ -342,15 +368,8 @@ int create_pipeline(VulkanApp app, const char *fragShaderPath) {
     // pipeline layout
     {
 #define DESC_SET_LAYOUTS_COUNT 1
-#define PUSH_CONSTANTS_COUNT 1
+#define PUSH_CONSTANTS_COUNT 0
         const VkDescriptorSetLayout descSetLayouts[DESC_SET_LAYOUTS_COUNT] = { app->descSetLayout };
-        const VkPushConstantRange pushConstants[PUSH_CONSTANTS_COUNT] = {
-            {
-                VK_SHADER_STAGE_VERTEX_BIT,
-                0,
-                sizeof(PushConstant),
-            },
-        };
         const VkPipelineLayoutCreateInfo ci = {
             VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
             NULL,
@@ -358,7 +377,7 @@ int create_pipeline(VulkanApp app, const char *fragShaderPath) {
             DESC_SET_LAYOUTS_COUNT,
             descSetLayouts,
             PUSH_CONSTANTS_COUNT,
-            pushConstants,
+            NULL,
         };
         CHECK_VK(vkCreatePipelineLayout(app->device, &ci, NULL, &app->pipelineLayout), "failed to create a pipeline layout.");
 #undef PUSH_CONSTANTS_COUNT
@@ -379,10 +398,9 @@ int create_pipeline(VulkanApp app, const char *fragShaderPath) {
     {
 #define SHADERS_COUNT 2
 #define VERT_INP_BIND_DESCS_COUNT 1
-#define VERT_INP_ATTR_DESCS_COUNT 2
+#define VERT_INP_ATTR_DESCS_COUNT 1
 #define VIEWPORTS_COUNT 1
 #define COLOR_BLEND_ATTACHMENTS_COUNT 1
-
         const VkPipelineShaderStageCreateInfo shaderCIs[SHADERS_COUNT] = {
             {
                 VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -405,13 +423,10 @@ int create_pipeline(VulkanApp app, const char *fragShaderPath) {
         };
 
         const VkVertexInputBindingDescription vertInpBindDescs[VERT_INP_BIND_DESCS_COUNT] = {
-            { 0, sizeof(float) * 5, VK_VERTEX_INPUT_RATE_VERTEX },
+            { 0, sizeof(float) * 3, VK_VERTEX_INPUT_RATE_VERTEX },
         };
         const VkVertexInputAttributeDescription vertInpAttrDescs[VERT_INP_ATTR_DESCS_COUNT] = {
-            // position
             { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 },
-            // uv
-            { 1, 0, VK_FORMAT_R32G32_SFLOAT, sizeof(float) * 3 },
         };
         const VkPipelineVertexInputStateCreateInfo vertInpCI = {
             VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
@@ -447,7 +462,6 @@ int create_pipeline(VulkanApp app, const char *fragShaderPath) {
             scissors,
         };
 
-        // ラスタライゼーションステート
         const VkPipelineRasterizationStateCreateInfo rasterCI = {
             VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
             NULL,
@@ -464,7 +478,6 @@ int create_pipeline(VulkanApp app, const char *fragShaderPath) {
             1.0f,
         };
 
-        // マルチサンプルステート
         const VkPipelineMultisampleStateCreateInfo multisampleCI = {
             VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
             NULL,
@@ -477,7 +490,6 @@ int create_pipeline(VulkanApp app, const char *fragShaderPath) {
             VK_FALSE,
         };
 
-        // カラーブレンドステート
         const VkPipelineColorBlendAttachmentState colorBlendAttchs[COLOR_BLEND_ATTACHMENTS_COUNT] = {
             {
                 VK_TRUE,
@@ -574,6 +586,14 @@ int render(VulkanApp app) {
     // bind a pipeline
     vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, app->pipeline);
 
+    // draw a square
+    {
+        const VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(cmdBuffer, 0, 1, &app->vtxBuffer->buffer, &offset);
+        vkCmdBindIndexBuffer(cmdBuffer, app->idxBuffer->buffer, offset, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(cmdBuffer, app->indicesCount, 1, 0, 0, 0);
+    }
+
     // end a render pass
     vkCmdEndRenderPass(cmdBuffer);
 
@@ -587,4 +607,12 @@ int render(VulkanApp app) {
 
 #undef CHECK
 #undef CHECK_VK
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+int save_rendering_result(VulkanApp app) {
+    return saveRenderingResult(app);
 }

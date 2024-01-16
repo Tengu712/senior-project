@@ -1,6 +1,7 @@
 #pragma once
 
 #include "util/memory/image.h"
+#include "util/memory/buffer.h"
 
 #include <stdint.h>
 #include <vulkan/vulkan.h>
@@ -19,6 +20,10 @@ typedef struct VulkanApp_t {
     VkRenderPass renderPass;
     VkFramebuffer framebuffer;
     VkDescriptorPool descPool;
+    // model
+    uint32_t indicesCount;
+    Buffer vtxBuffer;
+    Buffer idxBuffer;
     // pipeline
     VkDescriptorSetLayout descSetLayout;
     VkShaderModule vertShader;
@@ -32,3 +37,13 @@ void releasePipeline(VulkanApp app);
 VkCommandBuffer allocateAndStartCommandBuffer(VulkanApp app);
 
 int endAndSubmitCommandBuffer(VulkanApp app, VkCommandBuffer cmdBuffer);
+
+typedef struct TempObjsSaveRenderingResult_t {
+    Buffer buffer;
+    int mapped;
+    uint8_t *pixels;
+} TempObjsSaveRenderingResult;
+
+void deleteTempObjsSaveRenderingResult(const VulkanApp app, TempObjsSaveRenderingResult *temp);
+
+int saveRenderingResult(VulkanApp app);

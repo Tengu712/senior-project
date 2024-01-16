@@ -1,2 +1,4 @@
 /bin/
 /external/rand/
+/external/stb_image_write.h
+/external/stb_image.h

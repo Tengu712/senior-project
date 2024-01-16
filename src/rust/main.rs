@@ -8,6 +8,7 @@ extern "C" {
     fn create_vulkan_app() -> *mut c_void;
     fn create_pipeline(_: *mut c_void, _: *const c_char) -> c_int;
     fn render(_: *mut c_void) -> c_int;
+    fn save_rendering_result(_: *mut c_void) -> c_int;
 }
 
 fn main() {
@@ -30,6 +31,8 @@ fn main() {
         return;
     }
     let base_time = measure();
+
+    unsafe { save_rendering_result(vapp) };
 
     let eval = |_| {
         // TODO:
