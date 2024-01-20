@@ -10,6 +10,7 @@
 
 #define WIDTH 1920
 #define HEIGHT 1080
+#define ITERATION_COUNT 100
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -562,46 +563,48 @@ int render(VulkanApp app) {
         return 0;
     }
 
-    // allocate and start a command buffer
-    VkCommandBuffer cmdBuffer = allocateAndStartCommandBuffer(app);
-    CHECK(cmdBuffer != NULL, "failed to allocate or start a command buffer for rendering.");
+    for (int i = 0; i < ITERATION_COUNT; ++i) {
+        // allocate and start a command buffer
+        VkCommandBuffer cmdBuffer = allocateAndStartCommandBuffer(app);
+        CHECK(cmdBuffer != NULL, "failed to allocate or start a command buffer for rendering.");
 
-    // start a render pass
-    {
-        const VkClearValue clearValues[] = {
-            {{ 0.5f, 0.0f, 0.0f, 1.0f }},
-        };
-        const VkRenderPassBeginInfo bi = {
-            VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-            NULL,
-            app->renderPass,
-            app->framebuffer,
-            { {0, 0}, {WIDTH, HEIGHT} },
-            1,
-            clearValues,
-        };
-        vkCmdBeginRenderPass(cmdBuffer, &bi, VK_SUBPASS_CONTENTS_INLINE);
+        // start a render pass
+        {
+            const VkClearValue clearValues[] = {
+                {{ 0.5f, 0.0f, 0.0f, 1.0f }},
+            };
+            const VkRenderPassBeginInfo bi = {
+                VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+                NULL,
+                app->renderPass,
+                app->framebuffer,
+                { {0, 0}, {WIDTH, HEIGHT} },
+                1,
+                clearValues,
+            };
+            vkCmdBeginRenderPass(cmdBuffer, &bi, VK_SUBPASS_CONTENTS_INLINE);
+        }
+
+        // bind a pipeline
+        vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, app->pipeline);
+
+        // draw a square
+        {
+            const VkDeviceSize offset = 0;
+            vkCmdBindVertexBuffers(cmdBuffer, 0, 1, &app->vtxBuffer->buffer, &offset);
+            vkCmdBindIndexBuffer(cmdBuffer, app->idxBuffer->buffer, offset, VK_INDEX_TYPE_UINT32);
+            vkCmdDrawIndexed(cmdBuffer, app->indicesCount, 1, 0, 0, 0);
+        }
+
+        // end a render pass
+        vkCmdEndRenderPass(cmdBuffer);
+
+        // end and submit a command buffer
+        CHECK(endAndSubmitCommandBuffer(app, cmdBuffer), "failed to end or submit a command buffer for rendering.");
+
+        // wait for queue
+        CHECK_VK(vkQueueWaitIdle(app->queue), "failed to wait queue.");
     }
-
-    // bind a pipeline
-    vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, app->pipeline);
-
-    // draw a square
-    {
-        const VkDeviceSize offset = 0;
-        vkCmdBindVertexBuffers(cmdBuffer, 0, 1, &app->vtxBuffer->buffer, &offset);
-        vkCmdBindIndexBuffer(cmdBuffer, app->idxBuffer->buffer, offset, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(cmdBuffer, app->indicesCount, 1, 0, 0, 0);
-    }
-
-    // end a render pass
-    vkCmdEndRenderPass(cmdBuffer);
-
-    // end and submit a command buffer
-    CHECK(endAndSubmitCommandBuffer(app, cmdBuffer), "failed to end or submit a command buffer for rendering.");
-
-    // wait for queue
-    CHECK_VK(vkQueueWaitIdle(app->queue), "failed to wait queue.");
 
     return 1;
 

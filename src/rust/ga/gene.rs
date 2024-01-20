@@ -1,18 +1,21 @@
-use super::*;
-
 #[derive(Clone)]
-pub(super) struct Gene {
-    pub(super) code: Code,
-    pub(super) value: Value,
+pub struct Gene<C, V> {
+    pub code: Vec<C>,
+    pub value: V,
 }
 
-impl Gene {
-    pub(super) fn new<F>(code: u32, eval: F) -> Option<Self>
+impl<C, V> Gene<C, V> {
+    pub fn new<F>(code: &Vec<C>, eval: &F) -> Option<Self>
     where
-        F: Fn(Code) -> Option<Value>,
+        C: Clone,
+        V: Clone,
+        F: Fn(&Vec<C>) -> Option<V>,
     {
         if let Some(value) = eval(code) {
-            Some(Self { code, value })
+            Some(Self {
+                code: code.clone(),
+                value: value.clone(),
+            })
         } else {
             None
         }
