@@ -52,7 +52,7 @@ Buffer createBuffer(
             physDevMemProps,
             buffer->memReqs.memoryTypeBits,
             memPropFlags,
-            size
+            buffer->memReqs.size
         );
         CHECK(buffer->devMemory != NULL, "failed to allocate device memory for a buffer.");
     }

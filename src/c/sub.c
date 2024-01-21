@@ -19,7 +19,6 @@ void releasePipeline(VulkanApp app) {
     if (app->pipeline != NULL) vkDestroyPipeline(app->device, app->pipeline, NULL);
     if (app->fragShader != NULL) vkDestroyShaderModule(app->device, app->fragShader, NULL);
     if (app->pipelineLayout != NULL) vkDestroyPipelineLayout(app->device, app->pipelineLayout, NULL);
-    if (app->descSetLayout != NULL) vkDestroyDescriptorSetLayout(app->device, app->descSetLayout, NULL);
 }
 
 VkCommandBuffer allocateAndStartCommandBuffer(VulkanApp app) {

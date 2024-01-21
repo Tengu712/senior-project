@@ -30,8 +30,13 @@ void delete_vulkan_app(VulkanApp app) {
     if (app->idxBuffer != NULL) deleteBuffer(app->device, app->idxBuffer);
     if (app->vtxBuffer != NULL) deleteBuffer(app->device, app->vtxBuffer);
 
-    // rendering
+    // shader binding
+    if (app->uniformBuffer != NULL) deleteBuffer(app->device, app->uniformBuffer);
+    if (app->descSet != NULL) vkFreeDescriptorSets(app->device, app->descPool, 1, &app->descSet);
+    if (app->descSetLayout != NULL) vkDestroyDescriptorSetLayout(app->device, app->descSetLayout, NULL);
     if (app->descPool != NULL) vkDestroyDescriptorPool(app->device, app->descPool, NULL);
+
+    // rendering
     if (app->framebuffer != NULL) vkDestroyFramebuffer(app->device, app->framebuffer, NULL);
     if (app->renderPass != NULL) vkDestroyRenderPass(app->device, app->renderPass, NULL);
     if (app->renderTargetImageView != NULL) vkDestroyImageView(app->device, app->renderTargetImageView, NULL);
@@ -272,6 +277,13 @@ VulkanApp create_vulkan_app(void) {
         CHECK_VK(vkCreateFramebuffer(app->device, &ci, NULL, &app->framebuffer), "failed to create a framebuffer");
     }
 
+#undef RENDER_TARGET_PIXEL_FORMAT
+#undef ATTACHMENTS_COUNT
+
+    // ===================================================================================================================================================== //
+    //     shader binding                                                                                                                                    //
+    // ===================================================================================================================================================== //
+
     // create a descriptor pool
     {
 #define SIZES_COUNT 0
@@ -287,8 +299,98 @@ VulkanApp create_vulkan_app(void) {
 #undef SIZES_COUNT
     }
 
-#undef RENDER_TARGET_PIXEL_FORMAT
-#undef ATTACHMENTS_COUNT
+    // descriptor set layout
+    {
+#define BINDINGS_COUNT 1
+        const VkDescriptorSetLayoutBinding bindings[BINDINGS_COUNT] = {
+            {
+                0,
+                VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                1,
+                VK_SHADER_STAGE_FRAGMENT_BIT,
+                NULL,
+            },
+        };
+        const VkDescriptorSetLayoutCreateInfo ci = {
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            NULL,
+            0,
+            BINDINGS_COUNT,
+            bindings,
+        };
+        CHECK_VK(vkCreateDescriptorSetLayout(app->device, &ci, NULL, &app->descSetLayout), "failed to create a descriptor set layout.");
+#undef BINDINGS_COUNT
+    }
+
+    // allocate a descriptor set
+    {
+#define DESC_SETS_COUNT 1
+        const VkDescriptorSetLayout descSetLayouts[DESC_SETS_COUNT] = { app->descSetLayout };
+        const VkDescriptorSetAllocateInfo ai = {
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            NULL,
+            app->descPool,
+            DESC_SETS_COUNT,
+            descSetLayouts,
+        };
+        CHECK_VK(vkAllocateDescriptorSets(app->device, &ai, &app->descSet), "failed to allocate a descriptor set.");
+#undef DESC_SETS_COUNT
+    }
+
+    // create a uniform buffer
+    app->uniformBuffer = createBuffer(
+        app->device,
+        &app->physDevMemProps,
+        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        sizeof(Uniform)
+    );
+    CHECK(app->uniformBuffer != NULL, "failed to create a uniform buffer for a shader binding.");
+
+    // upload a uniform data
+    {
+        const Uniform uniform = {
+            {0.0f, 0.0f, 1.0f, 1.0f},
+            {0.0f, 0.0f, 1.0f, 1.0f},
+            {0.2f, 0.2f, 0.2f, 1.0f},
+            {0.2f, 0.2f, 0.2f, 1.0f},
+            {0.2f, 0.2f, 0.2f, 1.0f},
+            {0.2f, 0.2f, 0.2f, 1.0f},
+            {0.2f, 0.2f, 0.2f, 1.0f},
+            {0.2f, 0.2f, 0.2f, 1.0f},
+            128.0f,
+        };
+        CHECK(
+            uploadToDeviceMemory(app->device, app->uniformBuffer->devMemory, (const void *)&uniform, sizeof(Uniform)),
+            "failed to upload a uniform data to a device memory."
+        );
+    }
+
+    // update a descriptor set
+    {
+#define WRITES_COUNT 1
+        const VkDescriptorBufferInfo bi = {
+            app->uniformBuffer->buffer,
+            0,
+            VK_WHOLE_SIZE,
+        };
+        const VkWriteDescriptorSet wi[WRITES_COUNT] = {
+            {
+                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                NULL,
+                app->descSet,
+                0,
+                0,
+                1,
+                VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                NULL,
+                &bi,
+                NULL,
+            },
+        };
+        vkUpdateDescriptorSets(app->device, WRITES_COUNT, wi, 0, NULL);
+#undef WRITES_COUNT
+    }
 
     // ===================================================================================================================================================== //
     //     model                                                                                                                                             //
@@ -351,20 +453,6 @@ int create_pipeline(VulkanApp app, const char *fragShaderPath) {
 #define CHECK(p, m)    ERROR_IF(!(p),              "create_pipeline()", (m), releasePipeline(app), 0)
 
     releasePipeline(app);
-
-    // descriptor set layout
-    {
-#define BINDINGS_COUNT 0
-        const VkDescriptorSetLayoutCreateInfo ci = {
-            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-            NULL,
-            0,
-            BINDINGS_COUNT,
-            NULL,
-        };
-        CHECK_VK(vkCreateDescriptorSetLayout(app->device, &ci, NULL, &app->descSetLayout), "failed to create a descriptor set layout.");
-#undef BINDINGS_COUNT
-    }
 
     // pipeline layout
     {
@@ -587,6 +675,18 @@ int render(VulkanApp app) {
 
         // bind a pipeline
         vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, app->pipeline);
+
+        // bind a descriptor set
+        vkCmdBindDescriptorSets(
+            cmdBuffer,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            app->pipelineLayout,
+            0,
+            1,
+            &app->descSet,
+            0,
+            NULL
+        );
 
         // draw a square
         {
