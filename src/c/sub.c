@@ -11,16 +11,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void releasePipeline(VulkanApp app) {
-    if (app == NULL) {
-        return;
-    }
-    if (app->device) vkDeviceWaitIdle(app->device);
-    if (app->pipeline != NULL) vkDestroyPipeline(app->device, app->pipeline, NULL);
-    if (app->fragShader != NULL) vkDestroyShaderModule(app->device, app->fragShader, NULL);
-    if (app->pipelineLayout != NULL) vkDestroyPipelineLayout(app->device, app->pipelineLayout, NULL);
-}
-
 VkCommandBuffer allocateAndStartCommandBuffer(VulkanApp app) {
 #define CHECK_VK(p, m) ERROR_IF((p) != VK_SUCCESS, "createAndStartCommandBuffer()", (m), {}, NULL)
 

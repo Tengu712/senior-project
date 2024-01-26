@@ -57,8 +57,6 @@ typedef struct VulkanApp_t {
     VkPipeline pipeline;
 } *VulkanApp;
 
-void releasePipeline(VulkanApp app);
-
 VkCommandBuffer allocateAndStartCommandBuffer(VulkanApp app);
 
 int endAndSubmitCommandBuffer(VulkanApp app, VkCommandBuffer cmdBuffer);

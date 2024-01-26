@@ -10,7 +10,8 @@
 
 #define WIDTH 1920
 #define HEIGHT 1080
-#define ITERATION_COUNT 300
+#define ENTITIES_COUNT 2000
+#define ITERATION_COUNT 1
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -23,8 +24,14 @@ void delete_vulkan_app(VulkanApp app) {
     if (app->device != NULL) vkDeviceWaitIdle(app->device);
 
     // pipeline
-    releasePipeline(app);
+    if (app == NULL) {
+        return;
+    }
+    if (app->device) vkDeviceWaitIdle(app->device);
+    if (app->pipeline != NULL) vkDestroyPipeline(app->device, app->pipeline, NULL);
+    if (app->fragShader != NULL) vkDestroyShaderModule(app->device, app->fragShader, NULL);
     if (app->vertShader != NULL) vkDestroyShaderModule(app->device, app->vertShader, NULL);
+    if (app->pipelineLayout != NULL) vkDestroyPipelineLayout(app->device, app->pipelineLayout, NULL);
 
     // model
     if (app->idxBuffer != NULL) deleteBuffer(app->device, app->idxBuffer);
@@ -54,7 +61,7 @@ void delete_vulkan_app(VulkanApp app) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-VulkanApp create_vulkan_app(void) {
+VulkanApp create_vulkan_app(const char *fragShaderPath) {
 #define CHECK_VK(p, m) ERROR_IF((p) != VK_SUCCESS, "create_vulkan_app()", (m), delete_vulkan_app(app), NULL)
 #define CHECK(p, m)    ERROR_IF(!(p),              "create_vulkan_app()", (m), delete_vulkan_app(app), NULL)
 
@@ -413,66 +420,8 @@ VulkanApp create_vulkan_app(void) {
     }
 
     // ===================================================================================================================================================== //
-    //     model                                                                                                                                             //
+    //     pipeline                                                                                                                                          //
     // ===================================================================================================================================================== //
-
-    {
-#define VERTICES_COUNT 4
-#define INDICES_COUNT 6
-        const Vertex vertices[VERTICES_COUNT] = {
-            { { -1.0f, -1.0f, 0.0f }, { 0.0f, 1.0f } },
-            { {  1.0f, -1.0f, 0.0f }, { 1.0f, 1.0f } },
-            { {  1.0f,  1.0f, 0.0f }, { 1.0f, 0.0f } },
-            { { -1.0f,  1.0f, 0.0f }, { 0.0f, 0.0f } },
-        };
-        const uint32_t indices[INDICES_COUNT] = {
-            0, 1, 2,
-            0, 2, 3,
-        };
-        app->indicesCount = INDICES_COUNT;
-        app->vtxBuffer = createBuffer(
-            app->device,
-            &app->physDevMemProps,
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-            sizeof(Vertex) * VERTICES_COUNT
-        );
-        CHECK(app->vtxBuffer != NULL, "failed to create a vertex buffer for a model.");
-        app->idxBuffer = createBuffer(
-            app->device,
-            &app->physDevMemProps,
-            VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-            sizeof(uint32_t) * INDICES_COUNT
-        );
-        CHECK(app->idxBuffer != NULL, "failed to create a index buffer for a model.");
-        CHECK(
-            uploadToDeviceMemory(app->device, app->vtxBuffer->devMemory, vertices, sizeof(Vertex) * VERTICES_COUNT),
-            "failed to upload vertices data to a vertex buffer."
-        );
-        CHECK(
-            uploadToDeviceMemory(app->device, app->idxBuffer->devMemory, indices, sizeof(uint32_t) * INDICES_COUNT),
-            "failed to upload indices data to a index buffer."
-        );
-#undef INDICES_COUNT
-#undef VERTICES_COUNT
-    }
-
-    return app;
-
-#undef CHECK
-#undef CHECK_VK
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-int create_pipeline(VulkanApp app, const char *fragShaderPath) {
-#define CHECK_VK(p, m) ERROR_IF((p) != VK_SUCCESS, "create_pipeline()", (m), releasePipeline(app), 0)
-#define CHECK(p, m)    ERROR_IF(!(p),              "create_pipeline()", (m), releasePipeline(app), 0)
-
-    releasePipeline(app);
 
     // pipeline layout
     {
@@ -660,7 +609,53 @@ int create_pipeline(VulkanApp app, const char *fragShaderPath) {
 #undef SHADERS_COUNT
     }
 
-    return 1;
+    // ===================================================================================================================================================== //
+    //     model                                                                                                                                             //
+    // ===================================================================================================================================================== //
+
+    {
+#define VERTICES_COUNT 4
+#define INDICES_COUNT 6
+        const Vertex vertices[VERTICES_COUNT] = {
+            { { -1.0f, -1.0f, 0.0f }, { 0.0f, 1.0f } },
+            { {  1.0f, -1.0f, 0.0f }, { 1.0f, 1.0f } },
+            { {  1.0f,  1.0f, 0.0f }, { 1.0f, 0.0f } },
+            { { -1.0f,  1.0f, 0.0f }, { 0.0f, 0.0f } },
+        };
+        const uint32_t indices[INDICES_COUNT] = {
+            0, 1, 2,
+            0, 2, 3,
+        };
+        app->indicesCount = INDICES_COUNT;
+        app->vtxBuffer = createBuffer(
+            app->device,
+            &app->physDevMemProps,
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+            sizeof(Vertex) * VERTICES_COUNT
+        );
+        CHECK(app->vtxBuffer != NULL, "failed to create a vertex buffer for a model.");
+        app->idxBuffer = createBuffer(
+            app->device,
+            &app->physDevMemProps,
+            VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+            sizeof(uint32_t) * INDICES_COUNT
+        );
+        CHECK(app->idxBuffer != NULL, "failed to create a index buffer for a model.");
+        CHECK(
+            uploadToDeviceMemory(app->device, app->vtxBuffer->devMemory, vertices, sizeof(Vertex) * VERTICES_COUNT),
+            "failed to upload vertices data to a vertex buffer."
+        );
+        CHECK(
+            uploadToDeviceMemory(app->device, app->idxBuffer->devMemory, indices, sizeof(uint32_t) * INDICES_COUNT),
+            "failed to upload indices data to a index buffer."
+        );
+#undef INDICES_COUNT
+#undef VERTICES_COUNT
+    }
+
+    return app;
 
 #undef CHECK
 #undef CHECK_VK
@@ -680,6 +675,7 @@ int render(VulkanApp app, uint64_t *time) {
     }
 
     uint64_t totalTime = 0;
+
     for (int i = 0; i < ITERATION_COUNT; ++i) {
         // reset a query pool
         vkResetQueryPool(app->device, app->queryPool, 0, 2);
@@ -689,7 +685,7 @@ int render(VulkanApp app, uint64_t *time) {
         CHECK(cmdBuffer != NULL, "failed to allocate or start a command buffer for rendering.");
 
         // 
-        vkCmdWriteTimestamp(cmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, app->queryPool, 0);
+        vkCmdWriteTimestamp(cmdBuffer,VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, app->queryPool, 0);
 
         // start a render pass
         {
@@ -711,55 +707,55 @@ int render(VulkanApp app, uint64_t *time) {
         // bind a pipeline
         vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, app->pipeline);
 
-        // push constant
-        {
-            const PushConstant pushConstant = {
-                { 2.0f * (float)i / (float)ITERATION_COUNT, 0.0f, 0.0f, 0.0f },
-            };
-            vkCmdPushConstants(cmdBuffer, app->pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), (const void *)&pushConstant);
-        }
+        for (int j = 0; j < ENTITIES_COUNT; ++j) {
+            // push constant
+            {
+                const PushConstant pushConstant = {
+                    { 2.0f * (float)j / (float)ENTITIES_COUNT, 0.0f, 0.0f, 0.0f },
+                };
+                vkCmdPushConstants(cmdBuffer, app->pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), (const void *)&pushConstant);
+            }
 
-        // bind a descriptor set
-        vkCmdBindDescriptorSets(
-            cmdBuffer,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            app->pipelineLayout,
-            0,
-            1,
-            &app->descSet,
-            0,
-            NULL
-        );
+            // bind a descriptor set
+            vkCmdBindDescriptorSets(
+                cmdBuffer,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                app->pipelineLayout,
+                0,
+                1,
+                &app->descSet,
+                0,
+                NULL
+            );
 
-        // draw a square
-        {
-            const VkDeviceSize offset = 0;
-            vkCmdBindVertexBuffers(cmdBuffer, 0, 1, &app->vtxBuffer->buffer, &offset);
-            vkCmdBindIndexBuffer(cmdBuffer, app->idxBuffer->buffer, offset, VK_INDEX_TYPE_UINT32);
-            vkCmdDrawIndexed(cmdBuffer, app->indicesCount, 1, 0, 0, 0);
+            // draw a square
+            {
+                const VkDeviceSize offset = 0;
+                vkCmdBindVertexBuffers(cmdBuffer, 0, 1, &app->vtxBuffer->buffer, &offset);
+                vkCmdBindIndexBuffer(cmdBuffer, app->idxBuffer->buffer, offset, VK_INDEX_TYPE_UINT32);
+                vkCmdDrawIndexed(cmdBuffer, app->indicesCount, 1, 0, 0, 0);
+            }
         }
 
         // end a render pass
         vkCmdEndRenderPass(cmdBuffer);
 
         //
-        vkCmdWriteTimestamp(cmdBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, app->queryPool, 1);
+        vkCmdWriteTimestamp(cmdBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, app->queryPool, 1);
 
         // end and submit a command buffer
         CHECK(endAndSubmitCommandBuffer(app, cmdBuffer), "failed to end or submit a command buffer for rendering.");
 
-        // wait for queue
-        CHECK_VK(vkQueueWaitIdle(app->queue), "failed to wait queue.");
+        // wait for device
+        CHECK_VK(vkDeviceWaitIdle(app->device), "failed to wait device");
 
         // get the rendering time
         uint64_t times[2];
         CHECK_VK(
-            vkGetQueryPoolResults(app->device, app->queryPool, 0, 2, sizeof(uint64_t) * 2, times, sizeof(uint64_t), VK_QUERY_RESULT_64_BIT),
+            vkGetQueryPoolResults(app->device, app->queryPool, 0, 2, sizeof(uint64_t) * 2, times, sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT),
             "failed to get query pool results."
         );
         totalTime += times[1] - times[0];
-
-        CHECK_VK(vkDeviceWaitIdle(app->device), "failed to wait device.");
     }
 
     *time = totalTime;

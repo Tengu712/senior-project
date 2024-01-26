@@ -18,7 +18,7 @@ set clwith=cl ^
   /FC /nologo /utf-8 ^
   /sdl /W4 /WX ^
   ^
-  /I"C:\VulkanSDK\1.3.268.0\Include"
+  /I%VulkanInclude%
   
 %clwith% /Fo:buffer.obj "%tmpdir%\src\c\util\memory\buffer.c"
 %clwith% /Fo:image.obj  "%tmpdir%\src\c\util\memory\image.c"
@@ -29,7 +29,7 @@ set clwith=cl ^
 
 lib ^
   /OUT:vulkan-wrapper.lib ^
-  /LIBPATH:"C:\VulkanSDK\1.3.268.0\Lib" ^
+  /LIBPATH:%VulkanLib% ^
   vulkan-1.lib ^
   *.obj
 

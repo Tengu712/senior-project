@@ -8,7 +8,7 @@ type Code = Vec<Flag>;
 type Value = u64;
 
 const INITIAL_POPULATION_SIZE: usize = 30;
-const ITERATION_COUNT: usize = 20;
+const ITERATION_COUNT: usize = 10;
 const FLAGS: [Flag; 44] = [
     "--wrap-opkill",
     "--eliminate-dead-branches",
@@ -59,8 +59,7 @@ const FLAGS: [Flag; 44] = [
 #[link(name = "vulkan-wrapper", kind = "static")]
 extern "C" {
     fn delete_vulkan_app(_: *mut c_void);
-    fn create_vulkan_app() -> *mut c_void;
-    fn create_pipeline(_: *mut c_void, _: *const c_char) -> c_int;
+    fn create_vulkan_app(_: *const c_char) -> *mut c_void;
     fn render(_: *mut c_void, _: *mut u64) -> c_int;
     // fn save_rendering_result(_: *mut c_void) -> c_int;
 }
@@ -98,29 +97,41 @@ fn print_genes(genes: &Vec<Gene<Flag, Value>>) {
 }
 
 fn main() {
-    // create a Vulkan app.
-    let vapp = unsafe { create_vulkan_app() };
-    if vapp.is_null() {
-        println!("[ error ] main(): failed to create a vulkan app.");
-        return;
+    /*
+    let mut prev = 0;
+    for _ in 0..100 {
+        let org_shader_name = CString::new("./shader.frag.spv").unwrap();
+        let vapp = unsafe { create_vulkan_app(org_shader_name.as_ptr()) };
+        if vapp.is_null() {
+            println!("[ error ] main(): failed to create a vulkan app.");
+            return;
+        }
+        let mut time = 0;
+        unsafe { render(vapp, &mut time) };
+        unsafe { delete_vulkan_app(vapp) };
+        println!("{time} {}", time as i64 - prev);
+        prev = time as i64;
     }
+    */
 
     // create a function to measure the rendering time.
     // it returns the time taken for rendering in microseconds.
-    let measure = || -> u64 {
+    let measure = |shader_name| -> u64 {
+        let vapp = unsafe { create_vulkan_app(shader_name) };
+        if vapp.is_null() {
+            println!("[ error ] main(): failed to create a vulkan app.");
+            return u64::MAX;
+        }
         let mut time = 0;
         unsafe { render(vapp, &mut time) };
+        unsafe { delete_vulkan_app(vapp) };
         time
     };
 
     // measure the rendering time without optimization.
     // it's a base time for the evaluation of genes.
     let org_shader_name = CString::new("./shader.frag.spv").unwrap();
-    if unsafe { create_pipeline(vapp, org_shader_name.as_ptr()) == 0 } {
-        println!("[ error ] main(): failed to create a base pipeline.");
-        return;
-    }
-    let base_time = measure();
+    let base_time = measure(org_shader_name.as_ptr());
     println!("[ info ] main(): base_time = {} us", base_time);
 
     // create a function to create an optimized shader based on flags and recreate a pipeline with it.
@@ -133,38 +144,31 @@ fn main() {
             .status();
         match output {
             Ok(n) if !n.success() => {
-                return Err(format!(
+                Err(format!(
                     "[ warning ] optimize: failed to create an optimized shader: code={:?}",
                     code
                 ))
             }
             Err(e) => {
-                return Err(format!(
+                Err(format!(
                 "[ warning ] optimize: failed to run the 'spirv-opt' command: {} : flags = {:?}",
                 e.to_string(),
                 code
             ))
             }
-            _ => (),
+            _ => Ok(()),
         }
-        let opt_shader_name = CString::new("./shader.opt.frag.spv").unwrap();
-        if unsafe { create_pipeline(vapp, opt_shader_name.as_ptr()) == 0 } {
-            return Err(format!(
-                "[ error ] main(): failed to create a optimized pipeline: flags = {:?}",
-                code
-            ));
-        }
-        Ok(())
     };
 
     // measure the rendering time with a "-O" flag.
     // it's just a reference for me.
     if let Err(e) = optimize(&Vec::from(["-O"])) {
-        println!("{}", e);
+        println!("{e}");
         return;
     }
-    let o_time = measure();
-    println!("[ info ] main(): -O time = {} us", o_time);
+    let o_shader_name = CString::new("./shader.opt.frag.spv").unwrap();
+    let o_time = measure(o_shader_name.as_ptr());
+    println!("[ info ] main(): -O time = {o_time}");
 
     // create an evaluation function.
     // it's called every time a gene is created.
@@ -175,7 +179,8 @@ fn main() {
             return None;
         }
         // evaluate.
-        let time = measure();
+        let shader_name = CString::new("./shader.frag.spv").unwrap();
+        let time = measure(shader_name.as_ptr());
         if time <= base_time {
             Some(base_time - time)
         } else {
@@ -228,7 +233,4 @@ fn main() {
         max_gene.value,
         max_gene.code
     );
-
-    // exit.
-    unsafe { delete_vulkan_app(vapp) };
 }
