@@ -31,35 +31,32 @@ float gaussian(float ave, float variance, float x) {
 
 void main() {
     // phong reflection
-    if (constant.param.x < 1.0) {
-        vec4 position = bridgePosition;
-        vec4 normal = bridgeNormal;
-        vec3 vecNormal = vec3(normal.xyz);
-        vec3 vecToLight = normalize(uniLightPosition.xyz - position.xyz);
-        vec3 vecToCamera = normalize(uniCameraPosition.xyz - position.xyz);
-        vec3 vecReflect = normalize(-vecToLight + 2.0 * (dot(vecToLight, vecNormal) * vecNormal));
-        float cosDiffuseAngle = dot(vecNormal, vecToLight);
-        float cosDiffuseAngleClamp = clamp(cosDiffuseAngle, 0.0, 1.0);
-        float cosReflectAngle = dot(vecToCamera, vecReflect);
-        float cosReflectAngleClamp = clamp(cosReflectAngle, 0.0, 1.0);
-        vec3 color =
-        uniModelAmbient.xyz * uniLightAmbient.xyz
-        + uniModelDiffuse.xyz * cosDiffuseAngleClamp * uniLightDiffuse.xyz
-        + uniModelSpecular.xyz * pow(cosReflectAngleClamp, uniModelShininess) * uniLightSpecular.xyz;
-        outColor = /* texture(diffuseMap, bridgeUV.xy) * */ vec4(color, 1.0);
-    }
+    vec4 position = bridgePosition;
+    vec4 normal = bridgeNormal;
+    vec3 vecNormal = vec3(normal.xyz);
+    vec3 vecToLight = normalize(uniLightPosition.xyz - position.xyz);
+    vec3 vecToCamera = normalize(uniCameraPosition.xyz - position.xyz);
+    vec3 vecReflect = normalize(-vecToLight + 2.0 * (dot(vecToLight, vecNormal) * vecNormal));
+    float cosDiffuseAngle = dot(vecNormal, vecToLight);
+    float cosDiffuseAngleClamp = clamp(cosDiffuseAngle, 0.0, 1.0);
+    float cosReflectAngle = dot(vecToCamera, vecReflect);
+    float cosReflectAngleClamp = clamp(cosReflectAngle, 0.0, 1.0);
+    vec3 colorPhongReflection =
+    uniModelAmbient.xyz * uniLightAmbient.xyz
+    + uniModelDiffuse.xyz * cosDiffuseAngleClamp * uniLightDiffuse.xyz
+    + uniModelSpecular.xyz * pow(cosReflectAngleClamp, uniModelShininess) * uniLightSpecular.xyz;
+
     // gaussian blur
-    else if (constant.param.x < 2.0) {
-        vec4 color = vec4(0.0);
-        for (int i = -5; i <= 5; ++i) {
-            for (int j = -5; j <= 5; ++j) {
-                float u = bridgeUV.x + float(i);
-                float v = bridgeUV.y + float(j);
-                if (u < 0.0f || u > 1.0f || v < 0.0f || v > 1.0f) {
-                    color += /* texture(diffuseMap, vec2(u, v)) * */ gaussian(0.0f, 1.0f, i) * gaussian(0.0f, 1.0f, j);
-                }
+    vec4 colorGaussianBlur = vec4(0.0);
+    for (int i = -5; i <= 5; ++i) {
+        for (int j = -5; j <= 5; ++j) {
+            float u = bridgeUV.x + float(i);
+            float v = bridgeUV.y + float(j);
+            if (u < 0.0f || u > 1.0f || v < 0.0f || v > 1.0f) {
+                colorGaussianBlur += /* texture(diffuseMap, vec2(u, v)) * */ gaussian(0.0f, 1.0f, i) * gaussian(0.0f, 1.0f, j);
             }
         }
-        outColor = color;
     }
+    
+    outColor = vec4(colorPhongReflection, 1.0f) * colorGaussianBlur;
 }

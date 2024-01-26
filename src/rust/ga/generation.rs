@@ -12,6 +12,22 @@ fn shuffle_genes<C, V>(mut v: Vec<Gene<C, V>>) -> Vec<Gene<C, V>> {
     v
 }
 
+fn remove_consecutive_code<C>(v: Vec<C>) -> Vec<C> where C: Clone + std::cmp::PartialEq {
+    if v.is_empty() {
+        return v;
+    }
+    let mut new = Vec::new();
+    let mut prev = &v[0];
+    for i in 1..v.len() {
+        if &v[i] == prev {
+            continue;
+        }
+        prev = &v[i];
+        new.push(v[i].clone());
+    }
+    new
+}
+
 fn is_mutation_occur() -> bool {
     use rand::Rng;
     rand::thread_rng().gen::<f64>() < 0.5
@@ -32,10 +48,22 @@ impl<C, V> Generation<C, V> {
 
     pub fn next<F>(mut self, genes_count: usize, items: &[C], eval: &F) -> Self
     where
-        C: Clone,
-        V: Clone + Ord + Into<u64>,
+        C: Clone + std::cmp::PartialEq,
+        V: Clone + Ord + Into<u64> + std::fmt::Display,
         F: Fn(&Vec<C>) -> Option<V>,
     {
+        let mut new = Vec::new();
+        for n in self.genes {
+            if let Some(gene) = Gene::new(&n.code, eval) {
+                new.push(gene);
+            } else {
+                println!("[ warning ] Generation.next(): none : value = {}", n.value);
+                new.push(n.clone());
+            }
+        }
+        Self { genes: new }
+
+        /*
         // shuffle genes.
         self.genes = shuffle_genes(self.genes);
 
@@ -69,6 +97,8 @@ impl<C, V> Generation<C, V> {
                     break;
                 }
             }
+            //
+            let mut code = remove_consecutive_code(code);
             // 2. mutation.
             // 2-1. insert a new item.
             if is_mutation_occur() {
@@ -132,6 +162,7 @@ impl<C, V> Generation<C, V> {
 
         // to next generation.
         Self { genes }
+        */
     }
 
     pub fn get_max_gene(&self) -> Gene<C, V>

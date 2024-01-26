@@ -10,7 +10,7 @@
 
 #define WIDTH 1920
 #define HEIGHT 1080
-#define ENTITIES_COUNT 2000
+#define ENTITIES_COUNT 1000
 #define ITERATION_COUNT 1
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -75,9 +75,9 @@ VulkanApp create_vulkan_app(const char *fragShaderPath) {
 
     // create instance
     {
-#define LAYER_NAMES_COUNT 1
+#define LAYER_NAMES_COUNT 0
 #define EXT_NAMES_COUNT 0
-        const char *instLayerNames[LAYER_NAMES_COUNT] = { "VK_LAYER_KHRONOS_validation" };
+        // const char *instLayerNames[LAYER_NAMES_COUNT] = { "VK_LAYER_KHRONOS_validation" };
         const VkApplicationInfo ai = {
             VK_STRUCTURE_TYPE_APPLICATION_INFO,
             NULL,
@@ -93,7 +93,7 @@ VulkanApp create_vulkan_app(const char *fragShaderPath) {
             0,
             &ai,
             LAYER_NAMES_COUNT,
-            instLayerNames,
+            NULL,
             EXT_NAMES_COUNT,
             NULL,
         };

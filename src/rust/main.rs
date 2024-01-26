@@ -7,9 +7,9 @@ type Flag = &'static str;
 type Code = Vec<Flag>;
 type Value = u64;
 
-const INITIAL_POPULATION_SIZE: usize = 30;
+const INITIAL_POPULATION_SIZE: usize = 10;
 const ITERATION_COUNT: usize = 10;
-const FLAGS: [Flag; 44] = [
+const FLAGS: [Flag; 23] = [
     "--wrap-opkill",
     "--eliminate-dead-branches",
     "--merge-return",
@@ -19,41 +19,20 @@ const FLAGS: [Flag; 44] = [
     "--private-to-local",
     "--eliminate-local-single-block",
     "--eliminate-local-single-store",
-    "--eliminate-dead-code-aggressive",
     "--scalar-replacement=100",
     "--convert-local-access-chains",
-    "--eliminate-local-single-block",
-    "--eliminate-local-single-store",
-    "--eliminate-dead-code-aggressive",
     "--ssa-rewrite",
-    "--eliminate-dead-code-aggressive",
     "--ccp",
-    "--eliminate-dead-code-aggressive",
     "--loop-unroll",
-    "--eliminate-dead-branches",
     "--redundancy-elimination",
     "--combine-access-chains",
     "--simplify-instructions",
-    "--scalar-replacement=100",
-    "--convert-local-access-chains",
-    "--eliminate-local-single-block",
-    "--eliminate-local-single-store",
-    "--eliminate-dead-code-aggressive",
-    "--ssa-rewrite",
-    "--eliminate-dead-code-aggressive",
     "--vector-dce",
     "--eliminate-dead-inserts",
-    "--eliminate-dead-branches",
-    "--simplify-instructions",
     "--if-conversion",
     "--copy-propagate-arrays",
     "--reduce-load-size",
-    "--eliminate-dead-code-aggressive",
     "--merge-blocks",
-    "--redundancy-elimination",
-    "--eliminate-dead-branches",
-    "--merge-blocks",
-    "--simplify-instructions",
 ];
 
 #[link(name = "vulkan-wrapper", kind = "static")]
@@ -184,11 +163,12 @@ fn main() {
         if time <= base_time {
             Some(base_time - time)
         } else {
-            None
+            Some(1)
         }
     };
 
     // create the initial population.
+    println!("[ debug ] main(): initial population creating:");
     let mut genes = Vec::new();
     for _ in 0..INITIAL_POPULATION_SIZE {
         loop {
@@ -196,12 +176,12 @@ fn main() {
             let code = shuffle_code(code);
             if let Some(gene) = Gene::new(&code, &eval) {
                 genes.push(gene);
+                println!("[ debug ] main(): value = {} , code = {}", gene.value, format_code_as_idx(&code));
                 break;
             }
+            println!("[ debug ] main(): again");
         }
     }
-    println!("[ debug ] main(): initial population created:");
-    print_genes(&genes);
 
     // start Genetic Algorithm.
     let mut generation = Generation::new(genes);
@@ -217,11 +197,17 @@ fn main() {
             "[ info ] main(): end: max_gene.value = {}",
             max_gene.value
         );
+        // revalue
+        if let Some(n) = eval(&max_gene.code) {
+            println!("[ debug ] main(): re_time = {n} : code= {}", format_code_as_idx(&max_gene.code));
+        } else {
+            println!("[ warning ] main(): re_time is none : code = {}", format_code_as_idx(&max_gene.code));
+        }
         print_genes(&generation.genes);
     }
 
     // print the result.
-    let time = base_time - generation.genes[0].value;
+    let time = base_time - max_gene.value;
     println!(
         "[ info ] main(): max gene rendering time {} us , {} % of no optimization , {} % of -O",
         time,
