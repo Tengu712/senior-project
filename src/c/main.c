@@ -10,7 +10,7 @@
 
 #define WIDTH 1920
 #define HEIGHT 1080
-#define ITERATION_COUNT 100
+#define ITERATION_COUNT 300
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -43,6 +43,7 @@ void delete_vulkan_app(VulkanApp app) {
     if (app->renderTargetImage != NULL) deleteImage(app->device, app->renderTargetImage);
 
     // core
+    if (app->queryPool != NULL) vkDestroyQueryPool(app->device, app->queryPool, NULL);
     if (app->cmdPool != NULL) vkDestroyCommandPool(app->device, app->cmdPool, NULL);
     if (app->device != NULL) vkDestroyDevice(app->device, NULL);
     if (app->instance != NULL) vkDestroyInstance(app->instance, NULL);
@@ -116,7 +117,7 @@ VulkanApp create_vulkan_app(void) {
         vkGetPhysicalDeviceQueueFamilyProperties(app->physDevice, &count, props);
 
         for (int32_t i = 0; i < (int32_t)count; ++i) {
-            if ((props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) > 0) {
+            if ((props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) > 0 && (props[i].timestampValidBits) > 0) {
                 queueFamIndex = i;
                 break;
             }
@@ -130,7 +131,12 @@ VulkanApp create_vulkan_app(void) {
 #define QUEUE_FAMILIES_COUNT 1
 #define QUEUES_COUNT 1
 #define LAYER_NAMES_COUNT 0
-#define EXT_NAMES_COUNT 0
+#define EXT_NAMES_COUNT 1
+        const VkPhysicalDeviceHostQueryResetFeatures resetFeatures = {
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES,
+            NULL,
+            VK_TRUE,
+        };
         const float queuePriors[QUEUES_COUNT] = { 1.0f };
         const VkDeviceQueueCreateInfo queueCIs[QUEUE_FAMILIES_COUNT] = {
             {
@@ -142,16 +148,17 @@ VulkanApp create_vulkan_app(void) {
                 queuePriors,
             },
         };
+        const char *extNames[EXT_NAMES_COUNT] = { VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME };
         const VkDeviceCreateInfo ci = {
             VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-            NULL,
+            &resetFeatures,
             0,
             QUEUE_FAMILIES_COUNT,
             queueCIs,
             LAYER_NAMES_COUNT,
             NULL,
             EXT_NAMES_COUNT,
-            NULL,
+            extNames,
             NULL,
         };
         CHECK_VK(vkCreateDevice(app->physDevice, &ci, NULL, &app->device), "failed to create a logical device.");
@@ -173,6 +180,19 @@ VulkanApp create_vulkan_app(void) {
             queueFamIndex,
         };
         CHECK_VK(vkCreateCommandPool(app->device, &ci, NULL, &app->cmdPool), "failed to create a command pool.");
+    }
+
+    // create a query pool
+    {
+        const VkQueryPoolCreateInfo ci = {
+            VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+            NULL,
+            0,
+            VK_QUERY_TYPE_TIMESTAMP,
+            2,
+            0,
+        };
+        CHECK_VK(vkCreateQueryPool(app->device, &ci, NULL, &app->queryPool), "failed to create a query pool.");
     }
 
     // ===================================================================================================================================================== //
@@ -397,13 +417,13 @@ VulkanApp create_vulkan_app(void) {
     // ===================================================================================================================================================== //
 
     {
-#define VERTICES_COUNT 20
+#define VERTICES_COUNT 4
 #define INDICES_COUNT 6
-        const float vertices[VERTICES_COUNT] = {
-            -1.0, -1.0, 0.0,
-             1.0, -1.0, 0.0,
-             1.0,  1.0, 0.0,
-            -1.0,  1.0, 0.0,
+        const Vertex vertices[VERTICES_COUNT] = {
+            { { -1.0f, -1.0f, 0.0f }, { 0.0f, 1.0f } },
+            { {  1.0f, -1.0f, 0.0f }, { 1.0f, 1.0f } },
+            { {  1.0f,  1.0f, 0.0f }, { 1.0f, 0.0f } },
+            { { -1.0f,  1.0f, 0.0f }, { 0.0f, 0.0f } },
         };
         const uint32_t indices[INDICES_COUNT] = {
             0, 1, 2,
@@ -415,7 +435,7 @@ VulkanApp create_vulkan_app(void) {
             &app->physDevMemProps,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-            sizeof(float) * VERTICES_COUNT
+            sizeof(Vertex) * VERTICES_COUNT
         );
         CHECK(app->vtxBuffer != NULL, "failed to create a vertex buffer for a model.");
         app->idxBuffer = createBuffer(
@@ -427,7 +447,7 @@ VulkanApp create_vulkan_app(void) {
         );
         CHECK(app->idxBuffer != NULL, "failed to create a index buffer for a model.");
         CHECK(
-            uploadToDeviceMemory(app->device, app->vtxBuffer->devMemory, vertices, sizeof(float) * VERTICES_COUNT),
+            uploadToDeviceMemory(app->device, app->vtxBuffer->devMemory, vertices, sizeof(Vertex) * VERTICES_COUNT),
             "failed to upload vertices data to a vertex buffer."
         );
         CHECK(
@@ -457,8 +477,15 @@ int create_pipeline(VulkanApp app, const char *fragShaderPath) {
     // pipeline layout
     {
 #define DESC_SET_LAYOUTS_COUNT 1
-#define PUSH_CONSTANTS_COUNT 0
+#define PUSH_CONSTANTS_COUNT 1
         const VkDescriptorSetLayout descSetLayouts[DESC_SET_LAYOUTS_COUNT] = { app->descSetLayout };
+        const VkPushConstantRange pushConstRanges[PUSH_CONSTANTS_COUNT] = {
+            {
+                VK_SHADER_STAGE_FRAGMENT_BIT,
+                0,
+                sizeof(PushConstant),
+            },
+        };
         const VkPipelineLayoutCreateInfo ci = {
             VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
             NULL,
@@ -466,7 +493,7 @@ int create_pipeline(VulkanApp app, const char *fragShaderPath) {
             DESC_SET_LAYOUTS_COUNT,
             descSetLayouts,
             PUSH_CONSTANTS_COUNT,
-            NULL,
+            pushConstRanges,
         };
         CHECK_VK(vkCreatePipelineLayout(app->device, &ci, NULL, &app->pipelineLayout), "failed to create a pipeline layout.");
 #undef PUSH_CONSTANTS_COUNT
@@ -487,7 +514,7 @@ int create_pipeline(VulkanApp app, const char *fragShaderPath) {
     {
 #define SHADERS_COUNT 2
 #define VERT_INP_BIND_DESCS_COUNT 1
-#define VERT_INP_ATTR_DESCS_COUNT 1
+#define VERT_INP_ATTR_DESCS_COUNT 2
 #define VIEWPORTS_COUNT 1
 #define COLOR_BLEND_ATTACHMENTS_COUNT 1
         const VkPipelineShaderStageCreateInfo shaderCIs[SHADERS_COUNT] = {
@@ -512,10 +539,11 @@ int create_pipeline(VulkanApp app, const char *fragShaderPath) {
         };
 
         const VkVertexInputBindingDescription vertInpBindDescs[VERT_INP_BIND_DESCS_COUNT] = {
-            { 0, sizeof(float) * 3, VK_VERTEX_INPUT_RATE_VERTEX },
+            { 0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX },
         };
         const VkVertexInputAttributeDescription vertInpAttrDescs[VERT_INP_ATTR_DESCS_COUNT] = {
             { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 },
+            { 1, 0, VK_FORMAT_R32G32_SFLOAT, sizeof(float) * 3 },
         };
         const VkPipelineVertexInputStateCreateInfo vertInpCI = {
             VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
@@ -642,7 +670,7 @@ int create_pipeline(VulkanApp app, const char *fragShaderPath) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-int render(VulkanApp app) {
+int render(VulkanApp app, uint64_t *time) {
 #define CHECK_VK(p, m) ERROR_IF((p) != VK_SUCCESS, "render()", (m), {}, 0)
 #define CHECK(p, m)    ERROR_IF(!(p),              "render()", (m), {}, 0)
 
@@ -651,10 +679,17 @@ int render(VulkanApp app) {
         return 0;
     }
 
+    uint64_t totalTime = 0;
     for (int i = 0; i < ITERATION_COUNT; ++i) {
+        // reset a query pool
+        vkResetQueryPool(app->device, app->queryPool, 0, 2);
+
         // allocate and start a command buffer
         VkCommandBuffer cmdBuffer = allocateAndStartCommandBuffer(app);
         CHECK(cmdBuffer != NULL, "failed to allocate or start a command buffer for rendering.");
+
+        // 
+        vkCmdWriteTimestamp(cmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, app->queryPool, 0);
 
         // start a render pass
         {
@@ -675,6 +710,14 @@ int render(VulkanApp app) {
 
         // bind a pipeline
         vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, app->pipeline);
+
+        // push constant
+        {
+            const PushConstant pushConstant = {
+                { 2.0f * (float)i / (float)ITERATION_COUNT, 0.0f, 0.0f, 0.0f },
+            };
+            vkCmdPushConstants(cmdBuffer, app->pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), (const void *)&pushConstant);
+        }
 
         // bind a descriptor set
         vkCmdBindDescriptorSets(
@@ -699,13 +742,27 @@ int render(VulkanApp app) {
         // end a render pass
         vkCmdEndRenderPass(cmdBuffer);
 
+        //
+        vkCmdWriteTimestamp(cmdBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, app->queryPool, 1);
+
         // end and submit a command buffer
         CHECK(endAndSubmitCommandBuffer(app, cmdBuffer), "failed to end or submit a command buffer for rendering.");
 
         // wait for queue
         CHECK_VK(vkQueueWaitIdle(app->queue), "failed to wait queue.");
+
+        // get the rendering time
+        uint64_t times[2];
+        CHECK_VK(
+            vkGetQueryPoolResults(app->device, app->queryPool, 0, 2, sizeof(uint64_t) * 2, times, sizeof(uint64_t), VK_QUERY_RESULT_64_BIT),
+            "failed to get query pool results."
+        );
+        totalTime += times[1] - times[0];
+
+        CHECK_VK(vkDeviceWaitIdle(app->device), "failed to wait device.");
     }
 
+    *time = totalTime;
     return 1;
 
 #undef CHECK

@@ -7,8 +7,8 @@ type Flag = &'static str;
 type Code = Vec<Flag>;
 type Value = u64;
 
-const INITIAL_POPULATION_SIZE: usize = 20;
-const ITERATION_COUNT: usize = 10;
+const INITIAL_POPULATION_SIZE: usize = 30;
+const ITERATION_COUNT: usize = 20;
 const FLAGS: [Flag; 44] = [
     "--wrap-opkill",
     "--eliminate-dead-branches",
@@ -61,7 +61,7 @@ extern "C" {
     fn delete_vulkan_app(_: *mut c_void);
     fn create_vulkan_app() -> *mut c_void;
     fn create_pipeline(_: *mut c_void, _: *const c_char) -> c_int;
-    fn render(_: *mut c_void) -> c_int;
+    fn render(_: *mut c_void, _: *mut u64) -> c_int;
     // fn save_rendering_result(_: *mut c_void) -> c_int;
 }
 
@@ -107,11 +107,10 @@ fn main() {
 
     // create a function to measure the rendering time.
     // it returns the time taken for rendering in microseconds.
-    let measure = || -> u128 {
-        let start = std::time::Instant::now();
-        unsafe { render(vapp) };
-        let end = start.elapsed();
-        end.as_micros()
+    let measure = || -> u64 {
+        let mut time = 0;
+        unsafe { render(vapp, &mut time) };
+        time
     };
 
     // measure the rendering time without optimization.
@@ -164,7 +163,8 @@ fn main() {
         println!("{}", e);
         return;
     }
-    println!("[ info ] main(): -O time = {} us", measure());
+    let o_time = measure();
+    println!("[ info ] main(): -O time = {} us", o_time);
 
     // create an evaluation function.
     // it's called every time a gene is created.
@@ -177,7 +177,7 @@ fn main() {
         // evaluate.
         let time = measure();
         if time <= base_time {
-            Some((base_time - time) as u64)
+            Some(base_time - time)
         } else {
             None
         }
@@ -195,29 +195,36 @@ fn main() {
             }
         }
     }
+    println!("[ debug ] main(): initial population created:");
     print_genes(&genes);
 
     // start Genetic Algorithm.
     let mut generation = Generation::new(genes);
     let mut max_gene = generation.get_max_gene();
     for i in 0..ITERATION_COUNT {
+        println!("[ info ] main(): {} th generation:", i + 1);
         generation = generation.next(INITIAL_POPULATION_SIZE, &FLAGS, &eval);
         let this_max_gene = generation.get_max_gene();
         if this_max_gene.value > max_gene.value {
             max_gene = this_max_gene;
         }
         println!(
-            "[ info ] main(): the result of {} th generation: max_gene.value = {}",
-            i + 1,
+            "[ info ] main(): end: max_gene.value = {}",
             max_gene.value
         );
         print_genes(&generation.genes);
     }
 
     // print the result.
+    let time = base_time - generation.genes[0].value;
     println!(
-        "[ info ] main(): {} us , max_gene.value = {} , max_gene.code = {:?}",
-        base_time - generation.genes[0].value as u128,
+        "[ info ] main(): max gene rendering time {} us , {} % of no optimization , {} % of -O",
+        time,
+        time as f32 / base_time as f32,
+        time as f32 / o_time as f32
+    );
+    println!(
+        "[ info ] main(): max_gene.value = {} , max_gene.code = {:?}",
         max_gene.value,
         max_gene.code
     );

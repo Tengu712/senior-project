@@ -114,18 +114,21 @@ impl<C, V> Generation<C, V> {
             .genes
             .iter()
             .fold(0, |sum, n| sum + n.value.clone().into());
+        print!("[ debug ] Generation.next(): selected by roulette: ");
         for _ in 1..genes_count {
             let mut border = random(0, sum);
-            for gene in &self.genes {
+            for (i, gene) in self.genes.iter().enumerate() {
                 let value = gene.value.clone().into();
                 if border < value {
                     genes.push(gene.clone());
+                    print!("{i} ");
                     break;
                 } else {
                     border -= value;
                 }
             }
         }
+        println!("");
 
         // to next generation.
         Self { genes }

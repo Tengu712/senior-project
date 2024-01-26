@@ -6,6 +6,11 @@
 #include <stdint.h>
 #include <vulkan/vulkan.h>
 
+typedef struct Vertex_t {
+    float inPos[3];
+    float inUV[2];
+} Vertex;
+
 typedef struct Uniform_t {
     float uniCameraPosition[4];
     float uniLightPosition[4];
@@ -18,6 +23,10 @@ typedef struct Uniform_t {
     float uniModelShininess;
 } Uniform;
 
+typedef struct PushConstant_t {
+    float param[4];
+} PushConstant;
+
 typedef struct VulkanApp_t {
     // core
     VkInstance instance;
@@ -26,6 +35,7 @@ typedef struct VulkanApp_t {
     VkDevice device;
     VkQueue queue;
     VkCommandPool cmdPool;
+    VkQueryPool queryPool;
     // rendering
     Image renderTargetImage;
     VkImageView renderTargetImageView;
