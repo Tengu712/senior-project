@@ -1,4 +1,4 @@
-#include "c.h"
+#include "main.h"
 
 #include "util/error.h"
 #include "util/memory/memory.h"
@@ -10,14 +10,14 @@
 
 #define WIDTH 1920
 #define HEIGHT 1080
-#define ENTITIES_COUNT 1000
-#define ITERATION_COUNT 1
+#define ENTITIES_COUNT 500
+#define ITERATION_COUNT 2
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void delete_vulkan_app(VulkanApp app) {
+void deleteVulkanApp(VulkanApp app) {
     if (app == NULL) {
         return;
     }
@@ -61,9 +61,83 @@ void delete_vulkan_app(VulkanApp app) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-VulkanApp create_vulkan_app(const char *fragShaderPath) {
-#define CHECK_VK(p, m) ERROR_IF((p) != VK_SUCCESS, "create_vulkan_app()", (m), delete_vulkan_app(app), NULL)
-#define CHECK(p, m)    ERROR_IF(!(p),              "create_vulkan_app()", (m), delete_vulkan_app(app), NULL)
+VkCommandBuffer allocateAndStartCommandBuffer(VulkanApp app) {
+#define CHECK_VK(p, m) ERROR_IF((p) != VK_SUCCESS, "createAndStartCommandBuffer()", (m), {}, NULL)
+
+    VkCommandBuffer cmdBuffer;
+    {
+        const VkCommandBufferAllocateInfo ai = {
+            VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            NULL,
+            app->cmdPool,
+            VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            1,
+        };
+        CHECK_VK(vkAllocateCommandBuffers(app->device, &ai, &cmdBuffer), "failed to allocate a command buffer.");
+    }
+
+    {
+        const VkCommandBufferBeginInfo bi = {
+            VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            NULL,
+            VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+            NULL,
+        };
+        CHECK_VK(vkBeginCommandBuffer(cmdBuffer, &bi), "failed to begin a command buffer.");
+    }
+
+    return cmdBuffer;
+
+#undef CHECK_VK
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+int endAndSubmitCommandBuffer(VulkanApp app, VkCommandBuffer cmdBuffer) {
+#define CHECK_VK(p, m) ERROR_IF((p) != VK_SUCCESS, "submitCommandBuffer()", (m), {}, 0)
+
+    vkEndCommandBuffer(cmdBuffer);
+
+    {
+#define SUBMITS_COUNT 1
+#define WAIT_SEMAPHORES_COUNT 0
+#define COMMAND_BUFFERS_COUNT 1
+#define SIGNAL_SEMAPHORES_COUNT 0
+        const VkCommandBuffer cmdBuffers[COMMAND_BUFFERS_COUNT] = { cmdBuffer };
+        const VkSubmitInfo sis[SUBMITS_COUNT] = {
+            {
+                VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                NULL,
+                WAIT_SEMAPHORES_COUNT,
+                NULL,
+                NULL,
+                COMMAND_BUFFERS_COUNT,
+                cmdBuffers,
+                SIGNAL_SEMAPHORES_COUNT,
+                NULL,
+            },
+        };
+        CHECK_VK(vkQueueSubmit(app->queue, SUBMITS_COUNT, sis, NULL), "failed to submit a command buffer.");
+#undef SIGNAL_SEMAPHORES_COUNT
+#undef COMMAND_BUFFERS_COUNT
+#undef WAIT_SEMAPHORES_COUNT
+#undef SUBMITS_COUNT
+    }
+
+    return 1;
+
+#undef CHECK_VK
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+int main() {
+#define CHECK_VK(p, m) ERROR_IF((p) != VK_SUCCESS, "main()", (m), deleteVulkanApp(app), 1)
+#define CHECK(p, m)    ERROR_IF(!(p),              "main()", (m), deleteVulkanApp(app), 1)
 
     // create app
     const VulkanApp app = (const VulkanApp)malloc(sizeof(struct VulkanApp_t));
@@ -191,15 +265,17 @@ VulkanApp create_vulkan_app(const char *fragShaderPath) {
 
     // create a query pool
     {
+#define QUERIES_COUNT 2
         const VkQueryPoolCreateInfo ci = {
             VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
             NULL,
             0,
             VK_QUERY_TYPE_TIMESTAMP,
-            2,
+            QUERIES_COUNT,
             0,
         };
         CHECK_VK(vkCreateQueryPool(app->device, &ci, NULL, &app->queryPool), "failed to create a query pool.");
+#undef QUERIES_COUNT
     }
 
     // ===================================================================================================================================================== //
@@ -326,7 +402,7 @@ VulkanApp create_vulkan_app(const char *fragShaderPath) {
 #undef SIZES_COUNT
     }
 
-    // descriptor set layout
+    // create a descriptor set layout
     {
 #define BINDINGS_COUNT 1
         const VkDescriptorSetLayoutBinding bindings[BINDINGS_COUNT] = {
@@ -365,14 +441,16 @@ VulkanApp create_vulkan_app(const char *fragShaderPath) {
     }
 
     // create a uniform buffer
-    app->uniformBuffer = createBuffer(
-        app->device,
-        &app->physDevMemProps,
-        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        sizeof(Uniform)
-    );
-    CHECK(app->uniformBuffer != NULL, "failed to create a uniform buffer for a shader binding.");
+    {
+        app->uniformBuffer = createBuffer(
+            app->device,
+            &app->physDevMemProps,
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            sizeof(Uniform)
+        );
+        CHECK(app->uniformBuffer != NULL, "failed to create a uniform buffer for a shader binding.");
+    }
 
     // upload a uniform data
     {
@@ -423,7 +501,7 @@ VulkanApp create_vulkan_app(const char *fragShaderPath) {
     //     pipeline                                                                                                                                          //
     // ===================================================================================================================================================== //
 
-    // pipeline layout
+    // create a pipeline layout
     {
 #define DESC_SET_LAYOUTS_COUNT 1
 #define PUSH_CONSTANTS_COUNT 1
@@ -449,17 +527,15 @@ VulkanApp create_vulkan_app(const char *fragShaderPath) {
 #undef DESC_SET_LAYOUTS_COUNT
     }
 
-    // shader modules
+    // create shader modules
     {
-        if (app->vertShader == NULL) {
-            app->vertShader = createShaderModuleFromFile(app->device, "./shader.vert.spv");
-            CHECK(app->vertShader != NULL, "failed to create a shader module from ./shader.vert.spv");
-        }
-        app->fragShader = createShaderModuleFromFile(app->device, fragShaderPath);
+        app->vertShader = createShaderModuleFromFile(app->device, "./shader.vert.spv");
+        CHECK(app->vertShader != NULL, "failed to create a shader module from ./shader.vert.spv");
+        app->fragShader = createShaderModuleFromFile(app->device, "./shader.frag.spv");
         CHECK(app->fragShader != NULL, "failed to create a shader module from ./shader.frag.spv");
     }
 
-    // pipeline
+    // create a pipeline
     {
 #define SHADERS_COUNT 2
 #define VERT_INP_BIND_DESCS_COUNT 1
@@ -613,20 +689,11 @@ VulkanApp create_vulkan_app(const char *fragShaderPath) {
     //     model                                                                                                                                             //
     // ===================================================================================================================================================== //
 
-    {
 #define VERTICES_COUNT 4
 #define INDICES_COUNT 6
-        const Vertex vertices[VERTICES_COUNT] = {
-            { { -1.0f, -1.0f, 0.0f }, { 0.0f, 1.0f } },
-            { {  1.0f, -1.0f, 0.0f }, { 1.0f, 1.0f } },
-            { {  1.0f,  1.0f, 0.0f }, { 1.0f, 0.0f } },
-            { { -1.0f,  1.0f, 0.0f }, { 0.0f, 0.0f } },
-        };
-        const uint32_t indices[INDICES_COUNT] = {
-            0, 1, 2,
-            0, 2, 3,
-        };
-        app->indicesCount = INDICES_COUNT;
+
+    // create buffers
+    {
         app->vtxBuffer = createBuffer(
             app->device,
             &app->physDevMemProps,
@@ -643,6 +710,21 @@ VulkanApp create_vulkan_app(const char *fragShaderPath) {
             sizeof(uint32_t) * INDICES_COUNT
         );
         CHECK(app->idxBuffer != NULL, "failed to create a index buffer for a model.");
+    }
+
+    // upload data
+    {
+        const Vertex vertices[VERTICES_COUNT] = {
+            { { -1.0f, -1.0f, 0.0f }, { 0.0f, 1.0f } },
+            { {  1.0f, -1.0f, 0.0f }, { 1.0f, 1.0f } },
+            { {  1.0f,  1.0f, 0.0f }, { 1.0f, 0.0f } },
+            { { -1.0f,  1.0f, 0.0f }, { 0.0f, 0.0f } },
+        };
+        const uint32_t indices[INDICES_COUNT] = {
+            0, 1, 2,
+            0, 2, 3,
+        };
+        app->indicesCount = INDICES_COUNT;
         CHECK(
             uploadToDeviceMemory(app->device, app->vtxBuffer->devMemory, vertices, sizeof(Vertex) * VERTICES_COUNT),
             "failed to upload vertices data to a vertex buffer."
@@ -651,31 +733,16 @@ VulkanApp create_vulkan_app(const char *fragShaderPath) {
             uploadToDeviceMemory(app->device, app->idxBuffer->devMemory, indices, sizeof(uint32_t) * INDICES_COUNT),
             "failed to upload indices data to a index buffer."
         );
+    }
+
 #undef INDICES_COUNT
 #undef VERTICES_COUNT
-    }
 
-    return app;
-
-#undef CHECK
-#undef CHECK_VK
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-int render(VulkanApp app, uint64_t *time) {
-#define CHECK_VK(p, m) ERROR_IF((p) != VK_SUCCESS, "render()", (m), {}, 0)
-#define CHECK(p, m)    ERROR_IF(!(p),              "render()", (m), {}, 0)
-
-    if (app->pipeline == NULL) {
-        printf("[ warning ] render(): pipeline not created.\n");
-        return 0;
-    }
+    // ===================================================================================================================================================== //
+    //     measure                                                                                                                                           //
+    // ===================================================================================================================================================== //
 
     uint64_t totalTime = 0;
-
     for (int i = 0; i < ITERATION_COUNT; ++i) {
         // reset a query pool
         vkResetQueryPool(app->device, app->queryPool, 0, 2);
@@ -707,6 +774,7 @@ int render(VulkanApp app, uint64_t *time) {
         // bind a pipeline
         vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, app->pipeline);
 
+        // draw rectangles
         for (int j = 0; j < ENTITIES_COUNT; ++j) {
             // push constant
             {
@@ -750,25 +818,37 @@ int render(VulkanApp app, uint64_t *time) {
         CHECK_VK(vkDeviceWaitIdle(app->device), "failed to wait device");
 
         // get the rendering time
-        uint64_t times[2];
-        CHECK_VK(
-            vkGetQueryPoolResults(app->device, app->queryPool, 0, 2, sizeof(uint64_t) * 2, times, sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT),
-            "failed to get query pool results."
-        );
-        totalTime += times[1] - times[0];
+        {
+#define QUERIES_COUNT 2
+            uint64_t times[QUERIES_COUNT];
+            CHECK_VK(
+                vkGetQueryPoolResults(
+                    app->device,
+                    app->queryPool,
+                    0,
+                    QUERIES_COUNT,
+                    sizeof(uint64_t) * QUERIES_COUNT,
+                    times,
+                    sizeof(uint64_t),
+                    VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT
+                ),
+                "failed to get query pool results."
+            );
+            totalTime += times[1] - times[0];
+#undef QUERIES_COUNT
+        }
+
+        // wait for device
+        CHECK_VK(vkDeviceWaitIdle(app->device), "failed to wait device");
     }
 
-    *time = totalTime;
-    return 1;
+    // print
+    printf("%llu\n", totalTime);
+
+    // finish
+    deleteVulkanApp(app);
+    return 0;
 
 #undef CHECK
 #undef CHECK_VK
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-int save_rendering_result(VulkanApp app) {
-    return saveRenderingResult(app);
 }

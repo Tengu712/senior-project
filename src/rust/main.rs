@@ -1,222 +1,254 @@
 mod ga;
 
-use ga::{gene::*, generation::*};
-use std::{ffi::*, process::*};
+use std::process::*;
 
-type Flag = &'static str;
-type Code = Vec<Flag>;
-type Value = u64;
-
-const INITIAL_POPULATION_SIZE: usize = 10;
-const ITERATION_COUNT: usize = 10;
-const FLAGS: [Flag; 23] = [
-    "--wrap-opkill",
+const FLAGS: [&'static str; 57] = [
+    "--ccp",
+    "--cfg-cleanup",
+    "--code-sink",
+    "--combine-access-chains",
+    "--compact-ids",
+    "--convert-local-access-chains",
+    "--convert-relaxed-to-half",
+    "--copy-propagate-arrays",
+    "--descriptor-scalar-replacement",
     "--eliminate-dead-branches",
-    "--merge-return",
-    "--inline-entry-points-exhaustive",
-    "--eliminate-dead-functions",
     "--eliminate-dead-code-aggressive",
-    "--private-to-local",
+    "--eliminate-dead-const",
+    "--eliminate-dead-functions",
+    "--eliminate-dead-input-components",
+    "--eliminate-dead-inserts",
+    "--eliminate-dead-members",
+    "--eliminate-dead-variables",
     "--eliminate-local-single-block",
     "--eliminate-local-single-store",
-    "--scalar-replacement=100",
-    "--convert-local-access-chains",
-    "--ssa-rewrite",
-    "--ccp",
-    "--loop-unroll",
-    "--redundancy-elimination",
-    "--combine-access-chains",
-    "--simplify-instructions",
-    "--vector-dce",
-    "--eliminate-dead-inserts",
+    "--fix-func-call-param",
+    "--fix-storage-class",
+    "--flatten-decorations",
+    "--fold-spec-const-op-composite",
+    "--freeze-spec-const",
     "--if-conversion",
-    "--copy-propagate-arrays",
-    "--reduce-load-size",
+    "--inline-entry-points-exhaustive",
+    "--inline-entry-points-opaque",
+    "--interpolate-fixup",
+    "--inst-buff-addr-check",
+    "--inst-debug-printf",
+    "--local-redundancy-elimination",
+    "--loop-invariant-code-motion",
+    "--loop-peeling",
+    "--loop-unroll",
+    "--loop-unswitch",
     "--merge-blocks",
+    "--merge-return",
+    "--private-to-local",
+    "--redundancy-elimination",
+    "--relax-float-ops",
+    "--remove-dont-inline",
+    "--remove-duplicates",
+    "--remove-unused-interface-variables",
+    "--replace-desc-array-access-using-var-index",
+    "--replace-invalid-opcode",
+    "--scalar-replacement=100",
+    "--simplify-instructions",
+    "--spread-volatile-semantics",
+    "--ssa-rewrite",
+    "--strength-reduction",
+    "--strip-debug",
+    "--strip-nonsemantic",
+    "--unify-const",
+    "--upgrade-memory-model",
+    "--vector-dce",
+    "--workaround-1209",
+    "--wrap-opkill",
 ];
-
-#[link(name = "vulkan-wrapper", kind = "static")]
-extern "C" {
-    fn delete_vulkan_app(_: *mut c_void);
-    fn create_vulkan_app(_: *const c_char) -> *mut c_void;
-    fn render(_: *mut c_void, _: *mut u64) -> c_int;
-    // fn save_rendering_result(_: *mut c_void) -> c_int;
-}
 
 fn flip_coin() -> bool {
     use rand::Rng;
     rand::thread_rng().gen()
 }
 
-fn shuffle_code(mut v: Code) -> Code {
+fn shuffle<T>(mut v: Vec<T>) -> Vec<T> {
     use rand::seq::SliceRandom;
     let mut rng = rand::thread_rng();
     v.shuffle(&mut rng);
     v
 }
 
-fn format_code_as_idx(code: &Code) -> String {
-    let mut s = String::new();
-    for flag in code {
-        let idx = FLAGS.iter().position(|n| &n == &flag).unwrap();
-        s.push_str(&format!("{idx} "));
+fn print_all_with_space<T>(v: &Vec<T>)
+where
+    T: std::fmt::Display,
+{
+    for n in v {
+        print!("{n} ");
     }
-    s.pop();
-    s
 }
 
-fn print_genes(genes: &Vec<Gene<Flag, Value>>) {
-    for n in genes {
+fn get_genes_from_stdin() -> Option<Vec<ga::Gene<usize, u64>>> {
+    let mut genes = Vec::new();
+    let mut line = 1;
+    loop {
+        let mut indices_str = String::new();
+        if std::io::stdin().read_line(&mut indices_str).is_err() {
+            break;
+        }
+        let indices_str = indices_str.trim();
+        if indices_str == "" {
+            break;
+        }
+        let indices_str = indices_str.split(' ').collect::<Vec<&str>>();
+        let mut indices = Vec::new();
+        for n in &indices_str {
+            if let Ok(idx) = n.parse::<usize>() {
+                indices.push(idx);
+            } else {
+                println!(
+                    "[ error ] get_genes_from_stdin(): failed to parse a index: {line} line : {n}"
+                );
+                return None;
+            }
+        }
+        line += 1;
+        let mut value_str = String::new();
+        if std::io::stdin().read_line(&mut value_str).is_err() {
+            println!("[ error ] get_genes_from_stdin(): value not found: {line} line");
+            return None;
+        }
+        let value = if let Ok(n) = value_str.trim().parse::<u64>() {
+            n
+        } else {
+            println!("[ error ] get_genes_from_stdin(): failed to parse a value: {line} line : {value_str}");
+            return None;
+        };
+        genes.push(ga::Gene {
+            code: indices,
+            value: value,
+        });
+        line += 1;
+    }
+    Some(genes)
+}
+
+///
+fn init(args: Vec<String>) {
+    if args.len() < 3 {
+        println!("[ error ] init(): the initial population size not found.");
+        return;
+    }
+    let size = match args[2].parse::<usize>() {
+        Ok(n) => n,
+        Err(e) => {
+            println!(
+                "[ error ] init(): failed to parse the initial population size: {}",
+                e.to_string()
+            );
+            return;
+        }
+    };
+    for _ in 0..size {
+        let indices = (0..FLAGS.len())
+            .filter(|_| flip_coin())
+            .collect::<Vec<usize>>();
+        let indices = shuffle(indices);
+        print_all_with_space(&indices);
+        println!("");
+        println!("");
+    }
+}
+
+///
+fn opt(args: Vec<String>) {
+    let mut flags = Vec::new();
+    for n in &args[2..] {
+        match n.parse::<usize>() {
+            Ok(idx) => flags.push(FLAGS[idx]),
+            Err(e) => {
+                println!("[ error ] opt(): {}", e.to_string());
+                return;
+            }
+        }
+    }
+    print_all_with_space(&flags);
+    println!("");
+    let output = Command::new("spirv-opt")
+        .args(flags)
+        .args(["shader.org.frag.spv", "-o", "shader.frag.spv"])
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status();
+    match output {
+        Ok(n) if !n.success() => {
+            println!("[ error ] opt(): failed to create an optimized shader: {}", n.code().unwrap());
+        }
+        Err(e) => {
+            println!(
+                "[ error ] opt(): failed to run the 'spirv-opt' command: {}",
+                e.to_string(),
+            );
+        }
+        _ => (),
+    }
+}
+
+///
+fn crossover() {
+    let genes = if let Some(n) = get_genes_from_stdin() {
+        n
+    } else {
+        return;
+    };
+    let items = (0..FLAGS.len()).collect::<Vec<usize>>();
+    let children = ga::generation::crossover(&genes, &items);
+    for n in children {
+        print_all_with_space(&n);
+        println!("");
+        println!("");
+    }
+}
+
+///
+fn select(args: Vec<String>) {
+    if args.len() < 3 {
+        println!("[ error ] select(): the next generation genes count not found.");
+        return;
+    }
+    let size = if let Ok(n) = args[2].parse::<usize>() {
+        n
+    } else {
         println!(
-            "[ debug ] print_genes(): value = {} , code = {}",
-            n.value,
-            format_code_as_idx(&n.code)
+            "[ error ] select(): failed to parse the next generation genes count: {}",
+            args[2]
         );
+        return;
+    };
+    let genes = if let Some(n) = get_genes_from_stdin() {
+        n
+    } else {
+        return;
+    };
+    let genes = ga::generation::select(&genes, size);
+    for n in genes {
+        print_all_with_space(&n.code);
+        println!("");
+        println!("{}", n.value);
     }
 }
 
 fn main() {
-    /*
-    let mut prev = 0;
-    for _ in 0..100 {
-        let org_shader_name = CString::new("./shader.frag.spv").unwrap();
-        let vapp = unsafe { create_vulkan_app(org_shader_name.as_ptr()) };
-        if vapp.is_null() {
-            println!("[ error ] main(): failed to create a vulkan app.");
-            return;
-        }
-        let mut time = 0;
-        unsafe { render(vapp, &mut time) };
-        unsafe { delete_vulkan_app(vapp) };
-        println!("{time} {}", time as i64 - prev);
-        prev = time as i64;
-    }
-    */
-
-    // create a function to measure the rendering time.
-    // it returns the time taken for rendering in microseconds.
-    let measure = |shader_name| -> u64 {
-        let vapp = unsafe { create_vulkan_app(shader_name) };
-        if vapp.is_null() {
-            println!("[ error ] main(): failed to create a vulkan app.");
-            return u64::MAX;
-        }
-        let mut time = 0;
-        unsafe { render(vapp, &mut time) };
-        unsafe { delete_vulkan_app(vapp) };
-        time
-    };
-
-    // measure the rendering time without optimization.
-    // it's a base time for the evaluation of genes.
-    let org_shader_name = CString::new("./shader.frag.spv").unwrap();
-    let base_time = measure(org_shader_name.as_ptr());
-    println!("[ info ] main(): base_time = {} us", base_time);
-
-    // create a function to create an optimized shader based on flags and recreate a pipeline with it.
-    let optimize = |code: &Code| -> Result<(), String> {
-        let output = Command::new("spirv-opt")
-            .args(code)
-            .args(["shader.frag.spv", "-o", "shader.opt.frag.spv"])
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status();
-        match output {
-            Ok(n) if !n.success() => {
-                Err(format!(
-                    "[ warning ] optimize: failed to create an optimized shader: code={:?}",
-                    code
-                ))
-            }
-            Err(e) => {
-                Err(format!(
-                "[ warning ] optimize: failed to run the 'spirv-opt' command: {} : flags = {:?}",
-                e.to_string(),
-                code
-            ))
-            }
-            _ => Ok(()),
-        }
-    };
-
-    // measure the rendering time with a "-O" flag.
-    // it's just a reference for me.
-    if let Err(e) = optimize(&Vec::from(["-O"])) {
-        println!("{e}");
+    let args = std::env::args().collect::<Vec<String>>();
+    if args.len() < 2 {
+        println!("[ error ] main(): usage: ga <mode> [flag indices]");
         return;
     }
-    let o_shader_name = CString::new("./shader.opt.frag.spv").unwrap();
-    let o_time = measure(o_shader_name.as_ptr());
-    println!("[ info ] main(): -O time = {o_time}");
 
-    // create an evaluation function.
-    // it's called every time a gene is created.
-    let eval = |code: &Code| -> Option<Value> {
-        // create an optimized shader and recreate a pipeline with it.
-        if let Err(e) = optimize(code) {
-            println!("{}", e);
-            return None;
-        }
-        // evaluate.
-        let shader_name = CString::new("./shader.frag.spv").unwrap();
-        let time = measure(shader_name.as_ptr());
-        if time <= base_time {
-            Some(base_time - time)
-        } else {
-            Some(1)
-        }
-    };
-
-    // create the initial population.
-    println!("[ debug ] main(): initial population creating:");
-    let mut genes = Vec::new();
-    for _ in 0..INITIAL_POPULATION_SIZE {
-        loop {
-            let code = FLAGS.into_iter().filter(|_| flip_coin()).collect::<Code>();
-            let code = shuffle_code(code);
-            if let Some(gene) = Gene::new(&code, &eval) {
-                genes.push(gene);
-                println!("[ debug ] main(): value = {} , code = {}", gene.value, format_code_as_idx(&code));
-                break;
-            }
-            println!("[ debug ] main(): again");
-        }
+    if args[1] == "init" {
+        init(args);
+    } else if args[1] == "opt" {
+        opt(args);
+    } else if args[1] == "crossover" {
+        crossover();
+    } else if args[1] == "select" {
+        select(args);
+    } else {
+        println!("[ error ] main(): undefined mode: {}", args[1]);
     }
-
-    // start Genetic Algorithm.
-    let mut generation = Generation::new(genes);
-    let mut max_gene = generation.get_max_gene();
-    for i in 0..ITERATION_COUNT {
-        println!("[ info ] main(): {} th generation:", i + 1);
-        generation = generation.next(INITIAL_POPULATION_SIZE, &FLAGS, &eval);
-        let this_max_gene = generation.get_max_gene();
-        if this_max_gene.value > max_gene.value {
-            max_gene = this_max_gene;
-        }
-        println!(
-            "[ info ] main(): end: max_gene.value = {}",
-            max_gene.value
-        );
-        // revalue
-        if let Some(n) = eval(&max_gene.code) {
-            println!("[ debug ] main(): re_time = {n} : code= {}", format_code_as_idx(&max_gene.code));
-        } else {
-            println!("[ warning ] main(): re_time is none : code = {}", format_code_as_idx(&max_gene.code));
-        }
-        print_genes(&generation.genes);
-    }
-
-    // print the result.
-    let time = base_time - max_gene.value;
-    println!(
-        "[ info ] main(): max gene rendering time {} us , {} % of no optimization , {} % of -O",
-        time,
-        time as f32 / base_time as f32,
-        time as f32 / o_time as f32
-    );
-    println!(
-        "[ info ] main(): max_gene.value = {} , max_gene.code = {:?}",
-        max_gene.value,
-        max_gene.code
-    );
 }

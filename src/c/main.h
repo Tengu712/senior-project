@@ -60,13 +60,3 @@ typedef struct VulkanApp_t {
 VkCommandBuffer allocateAndStartCommandBuffer(VulkanApp app);
 
 int endAndSubmitCommandBuffer(VulkanApp app, VkCommandBuffer cmdBuffer);
-
-typedef struct TempObjsSaveRenderingResult_t {
-    Buffer buffer;
-    int mapped;
-    uint8_t *pixels;
-} TempObjsSaveRenderingResult;
-
-void deleteTempObjsSaveRenderingResult(const VulkanApp app, TempObjsSaveRenderingResult *temp);
-
-int saveRenderingResult(VulkanApp app);
