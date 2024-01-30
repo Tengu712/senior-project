@@ -11,7 +11,7 @@
 #define WIDTH 1920
 #define HEIGHT 1080
 #define ENTITIES_COUNT 500
-#define ITERATION_COUNT 2
+#define ITERATION_COUNT 1
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -135,9 +135,9 @@ int endAndSubmitCommandBuffer(VulkanApp app, VkCommandBuffer cmdBuffer) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-int main() {
-#define CHECK_VK(p, m) ERROR_IF((p) != VK_SUCCESS, "main()", (m), deleteVulkanApp(app), 1)
-#define CHECK(p, m)    ERROR_IF(!(p),              "main()", (m), deleteVulkanApp(app), 1)
+int run_vulkan_app(uint64_t *time) {
+#define CHECK_VK(p, m) ERROR_IF((p) != VK_SUCCESS, "run_vulkan_app()", (m), deleteVulkanApp(app), 0)
+#define CHECK(p, m)    ERROR_IF(!(p),              "run_vulkan_app()", (m), deleteVulkanApp(app), 0)
 
     // create app
     const VulkanApp app = (const VulkanApp)malloc(sizeof(struct VulkanApp_t));
@@ -842,12 +842,12 @@ int main() {
         CHECK_VK(vkDeviceWaitIdle(app->device), "failed to wait device");
     }
 
-    // print
-    printf("%llu\n", totalTime);
+    // 
+    *time = totalTime;
 
     // finish
     deleteVulkanApp(app);
-    return 0;
+    return 1;
 
 #undef CHECK
 #undef CHECK_VK
