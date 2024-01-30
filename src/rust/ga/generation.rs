@@ -108,7 +108,7 @@ where
             (child1, child2)
         } else {
             (code1.clone(), code2.clone())
-        }
+        };
         //
         for code in [child1, child2] {
             //
