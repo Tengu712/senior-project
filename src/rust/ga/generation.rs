@@ -31,6 +31,11 @@ where
     new
 }
 
+fn is_crossover_occur() -> bool {
+    use rand::Rng;
+    rand::thread_rng().gen::<f64>() < 0.75
+}
+
 fn is_mutation_occur() -> bool {
     use rand::Rng;
     rand::thread_rng().gen::<f64>() < 0.4
@@ -71,34 +76,40 @@ where
             &genes[0].code
         };
         // 1. crossover.
-        let mut child1 = Vec::new();
-        let mut child2 = Vec::new();
-        let mut count1 = 0;
-        let mut count2 = 0;
-        loop {
-            if count1 >= code1.len() && count2 >= code2.len() {
-                break;
+        let (child1, child2) = if is_crossover_occur() {
+            let mut child1 = Vec::new();
+            let mut child2 = Vec::new();
+            let mut count1 = 0;
+            let mut count2 = 0;
+            loop {
+                if count1 >= code1.len() && count2 >= code2.len() {
+                    break;
+                }
+                match random(0, 4) {
+                    0 if count1 < code1.len() => {
+                        child1.push(code1[count1].clone());
+                        count1 += 1;
+                    }
+                    1 if count1 < code1.len() => {
+                        child2.push(code1[count1].clone());
+                        count1 += 1;
+                    }
+                    2 if count2 < code2.len() => {
+                        child1.push(code2[count2].clone());
+                        count2 += 1;
+                    }
+                    3 if count2 < code2.len() => {
+                        child2.push(code2[count2].clone());
+                        count2 += 1;
+                    }
+                    _ => (),
+                }
             }
-            match random(0, 4) {
-                0 if count1 < code1.len() => {
-                    child1.push(code1[count1].clone());
-                    count1 += 1;
-                }
-                1 if count1 < code1.len() => {
-                    child2.push(code1[count1].clone());
-                    count1 += 1;
-                }
-                2 if count2 < code2.len() => {
-                    child1.push(code2[count2].clone());
-                    count2 += 1;
-                }
-                3 if count2 < code2.len() => {
-                    child2.push(code2[count2].clone());
-                    count2 += 1;
-                }
-                _ => (),
-            }
+            (child1, child2)
+        } else {
+            (code1.clone(), code2.clone())
         }
+        //
         for code in [child1, child2] {
             //
             let mut code = remove_consecutive_code(code);

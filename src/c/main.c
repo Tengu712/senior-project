@@ -10,7 +10,7 @@
 
 #define WIDTH 1920
 #define HEIGHT 1080
-#define ENTITIES_COUNT 500
+#define ENTITIES_COUNT 200
 #define ITERATION_COUNT 1
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -389,14 +389,20 @@ int run_vulkan_app(uint64_t *time) {
 
     // create a descriptor pool
     {
-#define SIZES_COUNT 0
+#define SIZES_COUNT 1
+        const VkDescriptorPoolSize sizes[SIZES_COUNT] = {
+            {
+                VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                1,
+            },
+        };
         const VkDescriptorPoolCreateInfo ci = {
             VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
             NULL,
             VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
             1,
             SIZES_COUNT,
-            NULL,
+            sizes,
         };
         CHECK_VK(vkCreateDescriptorPool(app->device, &ci, NULL, &app->descPool), "failed to create a descriptor pool.");
 #undef SIZES_COUNT

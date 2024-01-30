@@ -178,8 +178,28 @@ fn run() {
     }
 }
 
+fn test(args: Vec<String>) {
+    let interval = args[2].parse::<u64>().unwrap();
+    for _ in 0.. {
+        let mut tmp = 0;
+        if unsafe { run_vulkan_app(&mut tmp) } == 0 {
+            println!("[ warning ] eval(): failed to run vulkan app.");
+            return;
+        }
+        println!("{tmp}");
+        std::thread::sleep(std::time::Duration::from_secs(interval));
+    }
+}
+
 fn main() {
-    run();
+    let args = std::env::args().collect::<Vec<String>>();
+    if args.len() == 1 {
+        run();
+    } else if args[1] == "run" {
+        run();
+    } else if args[1] == "test" {
+        test(args);
+    }
 }
 
 /*
