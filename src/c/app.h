@@ -6,6 +6,9 @@
 #include <stdint.h>
 #include <vulkan/vulkan.h>
 
+#define WIDTH 1920
+#define HEIGHT 1080
+
 typedef struct Vertex_t {
     float inPos[3];
     float inUV[2];
@@ -57,6 +60,12 @@ typedef struct VulkanApp_t {
     VkPipeline pipeline;
 } *VulkanApp;
 
+void deleteVulkanApp(VulkanApp app);
+
+VulkanApp createVulkanApp(void);
+
 VkCommandBuffer allocateAndStartCommandBuffer(VulkanApp app);
 
 int endAndSubmitCommandBuffer(VulkanApp app, VkCommandBuffer cmdBuffer);
+
+int render(VulkanApp app, uint64_t *time);

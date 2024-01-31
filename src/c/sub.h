@@ -1,5 +1,5 @@
 #pragma once
 
-#include "main.h"
+#include "app.h"
 
 int saveRenderingResult(VulkanApp app);

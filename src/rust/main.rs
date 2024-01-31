@@ -33,7 +33,9 @@ const FLAGS: [&'static str; 23] = [
 
 #[link(name = "vulkan-wrapper", kind = "static")]
 extern "C" {
-    fn run_vulkan_app(_: *mut u64) -> std::ffi::c_int;
+    fn ff_delete_vulkan_app(_: *mut std::ffi::c_void);
+    fn ff_create_vulkan_app() -> *mut std::ffi::c_void;
+    fn ff_render(_: *mut std::ffi::c_void, _: *mut u64) -> std::ffi::c_int;
 }
 
 fn flip_coin() -> bool {
@@ -58,13 +60,38 @@ where
     println!("");
 }
 
+fn measure() -> Option<u64> {
+    // create a vulkan app
+    let vapp = unsafe { ff_create_vulkan_app() };
+    if vapp.is_null() {
+        println!("[ warning ] measure(): failed to create a vulkan app.");
+        return None;
+    }
+    // increase the rendering frequency to 20 times
+    // sum up the measurement values for the latter 10 iterations
+    let mut total = 0;
+    for i in 0..20 {
+        let mut time = 0;
+        if unsafe { ff_render(vapp, &mut time) } == 0 {
+            println!("[ warning ] measure(): failed to render.");
+            return None;
+        }
+        if i >= 10 {
+            total += time;
+        }
+    }
+    // finish
+    unsafe { ff_delete_vulkan_app(vapp) };
+    Some((total as f64 / 10.0) as u64)
+}
+
 fn eval(indices: &Vec<usize>) -> Option<u64> {
-    //
+    // get flags from indices
     let mut flags = Vec::new();
     for n in indices {
         flags.push(FLAGS[*n]);
     }
-    //
+    // run spirv-opt with flags
     let output = Command::new("spirv-opt")
         .args(flags)
         .args(["shader.org.frag.spv", "-o", "shader.frag.spv"])
@@ -88,21 +115,10 @@ fn eval(indices: &Vec<usize>) -> Option<u64> {
         }
         _ => (),
     }
-    //
-    let mut res = 0;
-    for _ in 0..3 {
-        let mut tmp = 0;
-        if unsafe { run_vulkan_app(&mut tmp) } == 0 {
-            println!("[ warning ] eval(): failed to run vulkan app.");
-            return None;
-        }
-        res += tmp;
-        std::thread::sleep(std::time::Duration::from_secs(20));
-    }
-    Some((res as f64 / 3.0) as u64)
+    // measure
+    measure()
 }
 
-///
 fn init(size: usize) -> Genes {
     let mut genes = Vec::new();
     for _ in 0..size {
@@ -128,28 +144,27 @@ fn init(size: usize) -> Genes {
     genes
 }
 
-///
 fn crossover(parents: &Genes) -> Genes {
     let items = (0..FLAGS.len()).collect::<Vec<usize>>();
-    let children = ga::generation::crossover(parents, &items);
+    let children_indices = ga::generation::crossover(parents, &items);
     let mut genes = Vec::new();
-    for n in children {
-        println_all_with_space(&n);
-        if let Some(value) = eval(&n) {
+    for indices in children_indices {
+        println_all_with_space(&indices);
+        if let Some(value) = eval(&indices) {
             println!("{value}");
-            genes.push(ga::Gene { code: n, value });
+            genes.push(ga::Gene { code: indices, value });
         } else {
             println!("99999999999");
             genes.push(ga::Gene {
-                code: n,
+                code: indices,
                 value: 99999999999,
             });
         }
+        std::thread::sleep(std::time::Duration::from_secs(10));
     }
     genes
 }
 
-///
 fn select(genes: &Genes, size: usize) -> Genes {
     let genes = ga::generation::select(genes, size);
     for n in &genes {
@@ -159,92 +174,96 @@ fn select(genes: &Genes, size: usize) -> Genes {
     genes
 }
 
+/// A function to run Genetic Algorithm.
 ///
-fn run() {
+/// When you want to terminate it, send a SIGINT, as it runs indefinitely.
+/// Due to extensive standard output, it is advisable to redirect it to some text file.
+fn run_run() {
     let mut genes = init(10);
     for i in 1.. {
         println!(
             "================================================================================"
         );
-        println!("    {i} th generation");
+        println!("    {i} TH GENERATION");
         println!(
             "================================================================================"
         );
-        println!("// crossover");
+        println!("// CROSSOVER");
         let mut children = crossover(&genes);
         genes.append(&mut children);
-        println!("// select");
+        println!("// SELECT");
         genes = select(&genes, 10);
     }
 }
 
-fn test(args: Vec<String>) {
-    let interval = args[2].parse::<u64>().unwrap();
-    for _ in 0.. {
-        let mut tmp = 0;
-        if unsafe { run_vulkan_app(&mut tmp) } == 0 {
-            println!("[ warning ] eval(): failed to run vulkan app.");
+/// A function to evaluate a gene.
+///
+/// Provide the genetic code as a command-line argument.
+fn run_eval(args: Vec<String>) {
+    let mut indices = Vec::new();
+    for n in &args[2..] {
+        if let Ok(n) = n.parse::<usize>() {
+            indices.push(n);
+        } else {
+            println!("[ error ] run_eval(): failed to parse an index: {n}");
             return;
         }
-        println!("{tmp}");
+    }
+    if let Some(value) = eval(&indices) {
+        println!("{value}");
+    } else {
+        println!("[ warning ] run_eval(): eval() returned None.");
+    }
+}
+
+/// A function to measure the rendering time.
+///
+/// Apply the shader 'shader.frag.spv'.
+fn run_measure() {
+    if let Some(value) = measure() {
+        println!("{value}");
+    } else {
+        println!("[ warning ] run_measure(): measure() returned None.");
+    }
+}
+
+/// A function to verify GPU measurement errors.
+///
+/// Apply the shader 'shader.frag.spv'.
+/// Specify the number of seconds to pause the thread as the 3rd command-line argument.
+/// When you want to terminate it, send a SIGINT, as it runs indefinitely.
+fn run_test(args: Vec<String>) {
+    // create a vulkan app
+    let vapp = unsafe { ff_create_vulkan_app() };
+    if vapp.is_null() {
+        println!("[ error ] run_test(): failed to create a vulkan app.");
+        return;
+    }
+    // measure
+    let interval = args[2].parse::<u64>().unwrap();
+    for _ in 0.. {
+        let mut time = 0;
+        if unsafe { ff_render(vapp, &mut time) } == 0 {
+            println!("[ warning ] run_eval(): failed to render.");
+            return;
+        }
+        println!("{time}");
         std::thread::sleep(std::time::Duration::from_secs(interval));
     }
 }
 
+/// Entry point.
 fn main() {
     let args = std::env::args().collect::<Vec<String>>();
     if args.len() == 1 {
-        run();
+        run_run();
     } else if args[1] == "run" {
-        run();
+        run_run();
+    } else if args[1] == "eval" {
+        run_eval(args);
+    } else if args[1] == "measure" {
+        run_measure();
     } else if args[1] == "test" {
-        test(args);
+        run_test(args);
     }
 }
-
-/*
-fn get_genes_from_stdin() -> Option<Vec<ga::Gene<usize, u64>>> {
-    let mut genes = Vec::new();
-    let mut line = 1;
-    loop {
-        let mut indices_str = String::new();
-        if std::io::stdin().read_line(&mut indices_str).is_err() {
-            break;
-        }
-        let indices_str = indices_str.trim();
-        if indices_str == "" {
-            break;
-        }
-        let indices_str = indices_str.split(' ').collect::<Vec<&str>>();
-        let mut indices = Vec::new();
-        for n in &indices_str {
-            if let Ok(idx) = n.parse::<usize>() {
-                indices.push(idx);
-            } else {
-                println!(
-                    "[ error ] get_genes_from_stdin(): failed to parse a index: {line} line : {n}"
-                );
-                return None;
-            }
-        }
-        line += 1;
-        let mut value_str = String::new();
-        if std::io::stdin().read_line(&mut value_str).is_err() {
-            println!("[ error ] get_genes_from_stdin(): value not found: {line} line");
-            return None;
-        }
-        let value = if let Ok(n) = value_str.trim().parse::<u64>() {
-            n
-        } else {
-            println!("[ error ] get_genes_from_stdin(): failed to parse a value: {line} line : {value_str}");
-            return None;
-        };
-        genes.push(ga::Gene {
-            code: indices,
-            value: value,
-        });
-        line += 1;
-    }
-    Some(genes)
-}
-*/

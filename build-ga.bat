@@ -21,8 +21,9 @@ set clwith=cl ^
 %clwith% /Fo:image.obj  "%tmpdir%\src\c\util\memory\image.c"
 %clwith% /Fo:memory.obj "%tmpdir%\src\c\util\memory\memory.c"
 %clwith% /Fo:shader.obj "%tmpdir%\src\c\util\shader.c"
-%clwith% /Fo:sub.obj  "%tmpdir%\src\c\sub.c"
+%clwith% /Fo:app.obj "%tmpdir%\src\c\app.c"
 %clwith% /Fo:main.obj "%tmpdir%\src\c\main.c"
+%clwith% /Fo:sub.obj  "%tmpdir%\src\c\sub.c"
 
 lib ^
   /OUT:vulkan-wrapper.lib ^
