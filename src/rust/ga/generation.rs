@@ -57,25 +57,42 @@ where
     genes.iter().max_by_key(|n| &n.value).unwrap().clone()
 }
 
+/// A function to create offspring from parent genes.
 ///
+/// CROSSOVER
+/// Pack the population into a circular array, with adjacent chromosomes as parents P1 and P2.
+/// Obtain offspring C1 and C2 through the next crossover with a 75% probability.
+/// - With a 25% probability, transcribe the first element of P1 to C1 and shift the starting position by one.
+/// - With a 25% probability, transcribe the first element of P1 to C2 and shift the starting position by one.
+/// - With a 25% probability, transcribe the first element of P2 to C1 and shift the starting position by one.
+/// - With a 25% probability, transcribe the first element of P2 to C2 and shift the starting position by one.
+/// - Terminate when either the beginning of P1 or P2 reaches the end.
+///
+/// MUTATION
+/// 1. Add a random new element at a random position with a 40% probability.
+/// 2. Change a random element to a new random element with a 40% probability.
+/// 3. Delete a random element with a 40% probability.
+/// 4. Swap the positions of two random elements with a 40% probability.
 pub fn crossover<C, V>(genes: &Vec<Gene<C, V>>, items: &[C]) -> Vec<Vec<C>>
 where
-    C: Clone + std::cmp::PartialEq + std::fmt::Debug,
+    C: Clone + std::cmp::PartialEq,
     V: Clone,
 {
-    // shuffle genes.
+    // shuffle genes
     let genes = shuffle(genes.clone());
 
-    // crossover and mutation.
+    // crossover and mutation
     let mut children = Vec::new();
     for i in 0..genes.len() {
+        // get parents
         let code1 = &genes[i].code;
         let code2 = if i + 1 < genes.len() {
             &genes[i + 1].code
         } else {
             &genes[0].code
         };
-        // 1. crossover.
+
+        // 1. crossover
         let (child1, child2) = if is_crossover_occur() {
             let mut child1 = Vec::new();
             let mut child2 = Vec::new();
@@ -109,23 +126,24 @@ where
         } else {
             (code1.clone(), code2.clone())
         };
-        //
+
+        // for each children
         for code in [child1, child2] {
-            //
+            // remove consecutive elements in the code
             let mut code = remove_consecutive_code(code);
-            // 2. mutation.
-            // 2-1. insert a new item.
+            // 2. mutation
+            // 2-1. insert a new item
             if is_mutation_occur() {
                 let idx_code = random(0, code.len() as u64 + 1) as usize;
                 let idx_items = random(0, items.len() as u64) as usize;
                 code.insert(idx_code, items[idx_items].clone());
             }
-            // 2-2. remove an item.
+            // 2-2. remove an item
             if is_mutation_occur() {
                 let idx = random(0, code.len() as u64) as usize;
                 code.remove(idx);
             }
-            // 2-3. exchange two items.
+            // 2-3. exchange two items
             if is_mutation_occur() {
                 let idx1 = random(0, code.len() as u64) as usize;
                 let idx2 = random(0, code.len() as u64) as usize;
@@ -134,13 +152,13 @@ where
                 code[idx1] = code_idx2;
                 code[idx2] = code_idx1;
             }
-            // 2-4. alter an item.
+            // 2-4. alter an item
             if is_mutation_occur() {
                 let idx_code = random(0, code.len() as u64) as usize;
                 let idx_items = random(0, items.len() as u64) as usize;
                 code[idx_code] = items[idx_items].clone();
             }
-            // 3. create a new indivisual.
+            // 3. create a new indivisual
             children.push(code);
         }
     }
@@ -148,7 +166,9 @@ where
     children
 }
 
+/// A function to select a specified number of genes from a population of genes.
 ///
+/// Choose the best gene, and the remaining genes are selected using the roulette wheel method.
 pub fn select<C, V>(genes: &Vec<Gene<C, V>>, size: usize) -> Vec<Gene<C, V>>
 where
     C: Clone,

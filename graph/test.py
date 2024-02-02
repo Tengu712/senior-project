@@ -2,15 +2,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # read data
-count = 0
+x = 0
 xs = []
 ys = []
 while True:
   try:
     line = input()
-    xs.append(count)
+    xs.append(x)
     ys.append(int(line))
-    count += 1
+    x += 1
   except EOFError:
     break
 

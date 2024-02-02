@@ -2,9 +2,6 @@ mod ga;
 
 use std::process::*;
 
-type Gene = ga::Gene<usize, u64>;
-type Genes = Vec<Gene>;
-
 const FLAGS: [&'static str; 23] = [
     "--wrap-opkill",
     "--eliminate-dead-branches",
@@ -50,14 +47,12 @@ fn shuffle<T>(mut v: Vec<T>) -> Vec<T> {
     v
 }
 
-fn println_all_with_space<T>(v: &Vec<T>)
-where
-    T: std::fmt::Display,
-{
-    for n in v {
+fn print_gene(gene: &ga::Gene<usize, u64>) {
+    for n in &gene.code {
         print!("{n} ");
     }
     println!("");
+    println!("{}", gene.value);
 }
 
 fn measure() -> Option<u64> {
@@ -119,67 +114,37 @@ fn eval(indices: &Vec<usize>) -> Option<u64> {
     measure()
 }
 
-fn init(size: usize) -> Genes {
-    let mut genes = Vec::new();
-    for _ in 0..size {
-        let indices = (0..FLAGS.len())
-            .filter(|_| flip_coin())
-            .collect::<Vec<usize>>();
-        let indices = shuffle(indices);
-        println_all_with_space(&indices);
-        if let Some(value) = eval(&indices) {
-            println!("{value}");
-            genes.push(ga::Gene {
-                code: indices,
-                value,
-            });
-        } else {
-            println!("99999999999");
-            genes.push(ga::Gene {
-                code: indices,
-                value: 99999999999,
-            });
-        }
-    }
-    genes
-}
-
-fn crossover(parents: &Genes) -> Genes {
-    let items = (0..FLAGS.len()).collect::<Vec<usize>>();
-    let children_indices = ga::generation::crossover(parents, &items);
-    let mut genes = Vec::new();
-    for indices in children_indices {
-        println_all_with_space(&indices);
-        if let Some(value) = eval(&indices) {
-            println!("{value}");
-            genes.push(ga::Gene { code: indices, value });
-        } else {
-            println!("99999999999");
-            genes.push(ga::Gene {
-                code: indices,
-                value: 99999999999,
-            });
-        }
-        std::thread::sleep(std::time::Duration::from_secs(10));
-    }
-    genes
-}
-
-fn select(genes: &Genes, size: usize) -> Genes {
-    let genes = ga::generation::select(genes, size);
-    for n in &genes {
-        println_all_with_space(&n.code);
-        println!("{}", n.value);
-    }
-    genes
-}
-
 /// A function to run Genetic Algorithm.
 ///
+/// The size of population is 10.
+/// When an invalid result is obtained, the fitness (value) becomes 99999999999.
+///
 /// When you want to terminate it, send a SIGINT, as it runs indefinitely.
+/// To cool the GPU, the thread pauses for 10 seconds after each evaluation.
 /// Due to extensive standard output, it is advisable to redirect it to some text file.
 fn run_run() {
-    let mut genes = init(10);
+    let size = 10;
+    let interval = 10;
+    let invalid_value = 99999999999;
+    let items = (0..FLAGS.len()).collect::<Vec<usize>>();
+
+    // create the initial population
+    let mut genes = Vec::new();
+    for _ in 0..size {
+        let indices = items
+            .clone()
+            .into_iter()
+            .filter(|_| flip_coin())
+            .collect::<Vec<usize>>();
+        let code = shuffle(indices);
+        let value = eval(&code).unwrap_or(invalid_value);
+        let gene = ga::Gene { code, value };
+        print_gene(&gene);
+        genes.push(gene);
+        std::thread::sleep(std::time::Duration::from_secs(interval));
+    }
+
+    // run Genetic Algorithm
     for i in 1.. {
         println!(
             "================================================================================"
@@ -188,11 +153,33 @@ fn run_run() {
         println!(
             "================================================================================"
         );
+
         println!("// CROSSOVER");
-        let mut children = crossover(&genes);
-        genes.append(&mut children);
+        let children_indicess = ga::generation::crossover(&genes, &items);
+        for code in children_indicess {
+            let value = eval(&code).unwrap_or(invalid_value);
+            let gene = ga::Gene { code, value };
+            print_gene(&gene);
+            genes.push(gene);
+            std::thread::sleep(std::time::Duration::from_secs(interval));
+        }
+
         println!("// SELECT");
-        genes = select(&genes, 10);
+        genes = ga::generation::select(&genes, size);
+        for n in &genes {
+            print_gene(n);
+        }
+    }
+}
+
+/// A function to measure the rendering time.
+///
+/// Apply the shader 'shader.frag.spv'.
+fn run_measure() {
+    if let Some(value) = measure() {
+        println!("{value}");
+    } else {
+        println!("[ warning ] run_measure(): measure() returned None.");
     }
 }
 
@@ -216,17 +203,6 @@ fn run_eval(args: Vec<String>) {
     }
 }
 
-/// A function to measure the rendering time.
-///
-/// Apply the shader 'shader.frag.spv'.
-fn run_measure() {
-    if let Some(value) = measure() {
-        println!("{value}");
-    } else {
-        println!("[ warning ] run_measure(): measure() returned None.");
-    }
-}
-
 /// A function to verify GPU measurement errors.
 ///
 /// Apply the shader 'shader.frag.spv'.
@@ -245,7 +221,7 @@ fn run_test(args: Vec<String>) {
         let mut time = 0;
         if unsafe { ff_render(vapp, &mut time) } == 0 {
             println!("[ warning ] run_eval(): failed to render.");
-            return;
+            continue;
         }
         println!("{time}");
         std::thread::sleep(std::time::Duration::from_secs(interval));
@@ -259,10 +235,10 @@ fn main() {
         run_run();
     } else if args[1] == "run" {
         run_run();
-    } else if args[1] == "eval" {
-        run_eval(args);
     } else if args[1] == "measure" {
         run_measure();
+    } else if args[1] == "eval" {
+        run_eval(args);
     } else if args[1] == "test" {
         run_test(args);
     }
