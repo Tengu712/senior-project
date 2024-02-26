@@ -12,25 +12,6 @@ fn shuffle<T>(mut v: Vec<T>) -> Vec<T> {
     v
 }
 
-fn remove_consecutive_code<C>(v: Vec<C>) -> Vec<C>
-where
-    C: Clone + std::cmp::PartialEq,
-{
-    if v.is_empty() {
-        return v;
-    }
-    let mut new = Vec::new();
-    let mut prev = &v[0];
-    for i in 1..v.len() {
-        if &v[i] == prev {
-            continue;
-        }
-        prev = &v[i];
-        new.push(v[i].clone());
-    }
-    new
-}
-
 fn is_crossover_occur() -> bool {
     use rand::Rng;
     rand::thread_rng().gen::<f64>() < 0.75
@@ -128,9 +109,7 @@ where
         };
 
         // for each children
-        for code in [child1, child2] {
-            // remove consecutive elements in the code
-            let mut code = remove_consecutive_code(code);
+        for mut code in [child1, child2] {
             // 2. mutation
             // 2-1. insert a new item
             if is_mutation_occur() {
